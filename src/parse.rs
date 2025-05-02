@@ -91,7 +91,7 @@ impl Debug for TokenizationError {
 }
 
 pub fn tokenize(source: &str) -> Result<TokenTree, TokenizationError> {
-    let source_tokens = tokenize_source(source);
+    let source_tokens = tokenize_source(source)?;
     let (tree, i) = gen_tree(&source_tokens, 0)?;
     if i == source_tokens.len()-1 {
         Ok(tree)
@@ -291,7 +291,7 @@ fn handle_expr(expr: &[SourceToken], i: &mut usize) -> Result<TokenTree, Tokeniz
     }
 }
 
-fn tokenize_source(expr: &str) -> Vec<SourceToken> {
+fn tokenize_source(expr: &str) -> Result<Vec<SourceToken>, TokenizationError> {
     let mut tokens: Vec<SourceToken> = Vec::new();
     let mut current = None;
     // Takes the token as argument, to not perm borrow
@@ -338,6 +338,9 @@ fn tokenize_source(expr: &str) -> Vec<SourceToken> {
             }
         }
     }
+    if let Some(SourceToken::String(_)) = &current {
+        return Err(TokenizationError("Expected end of string".to_string()))
+    }
     push_token(&mut current);
-    tokens
+    Ok(tokens)
 }
