@@ -313,13 +313,17 @@ fn tokenize_source(expr: &str) -> Result<Vec<SourceToken>, TokenizationError> {
             push_token(&mut current);
             current = Some(SourceToken::String(String::new()));
         } else if c.is_numeric() || c == '.' {
+            if let Some(SourceToken::Name(name)) = &mut current {
+                name.push(c);
+                continue;
+            }
             if let Some(SourceToken::Number(num)) = &mut current {
                 num.push(c);
             } else {
                 push_token(&mut current);
                 current = Some(SourceToken::Number(c.to_string()));
             }
-        } else if c.is_alphabetic() {
+        } else if c.is_alphabetic() || c == '_' {
             if let Some(SourceToken::Name(name)) = &mut current {
                 name.push(c);
             } else {
