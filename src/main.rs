@@ -1,3 +1,7 @@
+
+mod parse;
+mod expression;
+
 fn main() {
-    println!("Hello, world!");
+    println!("{}", parse::tokenize("a_1").unwrap());
 }

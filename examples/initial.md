@@ -17,7 +17,7 @@ The resulting unit of a expression is the following:
 - All functions result in the 'None' unit.  
 - When both operands of an operator are of unit 'None' or literal, the result unit of the operator will be 'None'
 - When one operand of an operator is of unit 'None', the result unit of the operation will be equal to the unit of the other operand.  
-- When one operand is of an operator is a literal unit, and the other is defined or undefined, the result unit of the operation will be equal to the unit of the other operand.  
+- When one operand is of an operator is a literal unit, and the other is defined or implicit, the result unit of the operation will be equal to the unit of the other operand.  
 - When 
 
 In mm variables are defined by expressions, and variable assignments are "invisible" when expressions are rendered. Formally, the expression "vname=exp" is rendered as "exp".  
