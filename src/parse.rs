@@ -22,11 +22,7 @@ pub enum TokenTree {
         name: String,
         args: Vec<TokenTree>,
     },
-    VariableRef {
-        name: String,
-        /// True if the variable should be rendered as an expression
-        exp: bool,
-    },
+    VariableRef(String),
     NumberLiteral(String),
     Negate(Box<TokenTree>),
 }
@@ -66,13 +62,7 @@ impl Display for TokenTree {
                 r.pop();
                 r + ")"
             }
-            TokenTree::VariableRef { name, exp } => {
-                if *exp {
-                    format!("!{}", name)
-                } else {
-                    name.clone()
-                }
-            }
+            TokenTree::VariableRef(name) => name.clone(),
             TokenTree::NumberLiteral(n) => n.clone(),
             TokenTree::Negate(child) => {
                 format!("-{}", child)
@@ -93,7 +83,7 @@ impl Debug for TokenizationError {
 pub fn tokenize(source: &str) -> Result<TokenTree, TokenizationError> {
     let source_tokens = tokenize_source(source)?;
     let (tree, i) = gen_tree(&source_tokens, 0)?;
-    if i == source_tokens.len()-1 {
+    if i == source_tokens.len() - 1 {
         Ok(tree)
     } else {
         Err(TokenizationError("unexpected ) or ,".to_string()))
@@ -211,27 +201,10 @@ fn gen_tree(expr: &[SourceToken], start: usize) -> Result<(TokenTree, usize), To
 fn handle_expr(expr: &[SourceToken], i: &mut usize) -> Result<TokenTree, TokenizationError> {
     match &expr[*i] {
         SourceToken::Number(num) => Ok(TokenTree::NumberLiteral(num.clone())),
-        SourceToken::Operator(op) => {
-            if op == "!" {
-                // handle VarRef exp=true
-                *i += 1;
-                if let Some(SourceToken::Name(name)) = expr.get(*i) {
-                    Ok(TokenTree::VariableRef {
-                        name: name.clone(),
-                        exp: true,
-                    })
-                } else {
-                    Err(TokenizationError(
-                        "expected variable name after '!'".to_string(),
-                    ))
-                }
-            } else {
-                Err(TokenizationError(format!(
-                    "Expected expression, got operator '{}'",
-                    op
-                )))
-            }
-        }
+        SourceToken::Operator(op) => Err(TokenizationError(format!(
+            "Expected expression, got operator '{}'",
+            op
+        ))),
         SourceToken::Name(name) => {
             if expr.get(*i + 1) == Some(&SourceToken::Operator("=".to_string())) {
                 // handle VarAssign
@@ -244,11 +217,11 @@ fn handle_expr(expr: &[SourceToken], i: &mut usize) -> Result<TokenTree, Tokeniz
             } else if let Some(SourceToken::Parentheses(false)) = expr.get(*i + 1) {
                 // handle FuncCall
                 let mut args = Vec::new();
-                *i+=2;
+                *i += 2;
                 loop {
                     let (arg, ii) = gen_tree(expr, *i)?;
                     args.push(arg);
-                    *i = ii+1;
+                    *i = ii + 1;
                     if expr.get(*i) != Some(&SourceToken::Operator(','.to_string())) {
                         break;
                     }
@@ -266,10 +239,7 @@ fn handle_expr(expr: &[SourceToken], i: &mut usize) -> Result<TokenTree, Tokeniz
                 })
             } else {
                 // handle VarRef exp=false
-                Ok(TokenTree::VariableRef {
-                    name: name.clone(),
-                    exp: false,
-                })
+                Ok(TokenTree::VariableRef(name.clone()))
             }
         }
         SourceToken::String(s) => Err(TokenizationError(format!(
@@ -281,7 +251,7 @@ fn handle_expr(expr: &[SourceToken], i: &mut usize) -> Result<TokenTree, Tokeniz
             // if closing then it will be caught by is_end
             assert!(!v);
             let (token, ii) = gen_tree(expr, *i + 1)?;
-            *i = ii+1;
+            *i = ii + 1;
             if expr.get(*i) != Some(&SourceToken::Parentheses(true)) {
                 Err(TokenizationError("Expected ) after (".to_string()))
             } else {
@@ -343,7 +313,7 @@ fn tokenize_source(expr: &str) -> Result<Vec<SourceToken>, TokenizationError> {
         }
     }
     if let Some(SourceToken::String(_)) = &current {
-        return Err(TokenizationError("Expected end of string".to_string()))
+        return Err(TokenizationError("Expected end of string".to_string()));
     }
     push_token(&mut current);
     Ok(tokens)

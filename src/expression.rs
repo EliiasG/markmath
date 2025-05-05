@@ -108,10 +108,6 @@ pub enum Expression {
         function: String,
         args: Vec<Expression>,
     },
-    VariableRef {
-        name: String,
-        exp: bool,
-    },
     DefinedUnit {
         name: String,
         child: Box<Expression>,
@@ -120,6 +116,7 @@ pub enum Expression {
         name: String,
         child: Box<Expression>,
     },
+    VariableRef (String),
     NumberLiteral(f64),
     Negate(Box<Expression>),
 }
@@ -169,7 +166,7 @@ impl Expression {
                 }
             }
 
-            TokenTree::VariableRef { name, exp } => Ok(Self::VariableRef { name, exp }),
+            TokenTree::VariableRef(name) => Ok(Self::VariableRef(name)),
             TokenTree::NumberLiteral(val) => {
                 if let Ok(v) = val.parse() {
                     Ok(Self::NumberLiteral(v))
@@ -228,7 +225,7 @@ impl Expression {
                 )?;
                 Ok((r, Unit::None))
             }
-            Expression::VariableRef { name, .. } => {
+            Expression::VariableRef(name) => {
                 if let Some(r) = context.get_variable(name) {
                     Ok(r)
                 } else {
