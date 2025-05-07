@@ -45,11 +45,11 @@ impl EvaluationContext {
         }
     }
 
-    fn get_variable(&self, name: &str) -> Option<(f64, Unit)> {
+    pub fn get_variable(&self, name: &str) -> Option<(f64, Unit)> {
         self.map.get(name).cloned()
     }
 
-    fn store_variable(&mut self, name: &str, value: (f64, Unit)) {
+    pub fn store_variable(&mut self, name: &str, value: (f64, Unit)) {
         self.map.insert(name.to_string(), value);
     }
 }
@@ -109,14 +109,14 @@ pub enum Expression {
         args: Vec<Expression>,
     },
     DefinedUnit {
-        name: String,
+        name: Option<String>,
         child: Box<Expression>,
     },
     LiteralUnit {
         name: String,
         child: Box<Expression>,
     },
-    VariableRef (String),
+    VariableRef(String),
     NumberLiteral(f64),
     Negate(Box<Expression>),
 }
@@ -142,7 +142,7 @@ impl Expression {
                 Ok(transform_operators(provider, operators, children))
             }
             TokenTree::DefinedUnit { name, child } => Ok(Self::DefinedUnit {
-                name,
+                name: if name == "None" { None } else { Some(name) },
                 child: Box::new(Self::new(*child, provider)?),
             }),
             TokenTree::LiteralUnit { name, child } => Ok(Self::LiteralUnit {
@@ -234,7 +234,11 @@ impl Expression {
             }
             Expression::DefinedUnit { name, child } => {
                 let (r, _) = child.eval(provider, context)?;
-                Ok((r, Unit::Defined(DefinedUnit::Defined(name.clone()))))
+                Ok((
+                    r,
+                    name.as_ref()
+                        .map_or(Unit::None, |n| Unit::Defined(DefinedUnit::Defined(n.clone())))
+                ))
             }
             Expression::LiteralUnit { name, child } => {
                 let (r, _) = child.eval(provider, context)?;
@@ -244,7 +248,7 @@ impl Expression {
             Expression::Negate(expr) => {
                 let (r, u) = expr.eval(provider, context)?;
                 Ok((-r, u))
-            },
+            }
         }
     }
 }

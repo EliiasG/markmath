@@ -1,4 +1,4 @@
-use crate::expression::LibraryProvider;
+use crate::expression::{DefinedUnit, EvaluationContext, Expression, LibraryProvider, Unit};
 use std::collections::HashMap;
 
 pub enum FormattableExpression {
@@ -49,6 +49,12 @@ pub trait FormattableOperator<Formatter: LanguageFormatter> {
 
     fn is_associative(&self) -> bool;
 
+    /// Werther parenthesis can be added to the left (false for something like divide line or power)  
+    fn should_parenthesize_left(&self) -> bool;
+
+    /// Werther parenthesis can be to the right added (false for something like divide line)  
+    fn should_parenthesize_right(&self) -> bool;
+
     fn symbol(&self) -> &str;
 
     fn eval(&self, left: f64, right: f64) -> Result<f64, String>;
@@ -77,10 +83,26 @@ pub trait FormattableFunction<Formatter: LanguageFormatter> {
     );
 }
 
-pub struct FormattableLibraryProvider<Formatter: LanguageFormatter> {
-    functions: HashMap<String, Box<dyn FormattableFunction<Formatter>>>,
-    operators: HashMap<String, Box<dyn FormattableOperator<Formatter>>>,
-    formatter: Formatter,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ValueMode {
+    /// All variables get converted to numbers, and units are added to all numbers  
+    NumbersWithUnit,
+    /// All variables get converted to numbers, but no units on any numbers
+    NumbersNoUnit,
+    /// Variables get names, and number literals are with units
+    NamedLiteralUnit,
+    /// Variables get names, and units are never added
+    NamedNoUnit,
+}
+
+pub trait UnitLibrary: Sized {
+    fn resolve_defined_unit(&self, unit: &DefinedUnit) -> &str;
+}
+
+pub struct FormattableLibraryProvider<F: LanguageFormatter> {
+    functions: HashMap<String, Box<dyn FormattableFunction<F>>>,
+    operators: HashMap<String, Box<dyn FormattableOperator<F>>>,
+    formatter: F,
 }
 
 impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
@@ -101,6 +123,121 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
             functions: funcs,
             operators: ops,
             formatter,
+        }
+    }
+
+    pub fn generate_formattable_expression(
+        &self,
+        eval_ctx: &EvaluationContext,
+        unit_lib: &impl UnitLibrary,
+        exp: &Expression,
+        value_mode: ValueMode,
+        parenthesise: bool,
+    ) -> FormattableExpression {
+        if parenthesise {
+            return FormattableExpression::Parenthesis(Box::new(
+                self.generate_formattable_expression(eval_ctx, unit_lib, exp, value_mode, false),
+            ));
+        }
+
+        match exp {
+            Expression::VariableAssign { child, .. } => {
+                self.generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false)
+            }
+            Expression::Operator {
+                operator,
+                left,
+                right,
+            } => {
+                let p_l = if let Expression::Operator { operator: l_op, .. } = left.as_ref() {
+                    self.operator_precedence(operator) > self.operator_precedence(l_op)
+                        && self.operators[operator].should_parenthesize_left()
+                } else {
+                    false
+                };
+                let p_r = if let Expression::Operator { operator: r_op, .. } = right.as_ref() {
+                    self.operator_precedence(operator) > self.operator_precedence(r_op)
+                        && self.operators[operator].should_parenthesize_right()
+                } else {
+                    false
+                };
+
+                let left =
+                    self.generate_formattable_expression(eval_ctx, unit_lib, left, value_mode, p_l);
+                let right = self
+                    .generate_formattable_expression(eval_ctx, unit_lib, right, value_mode, p_r);
+
+                FormattableExpression::Operator {
+                    operator: operator.clone(),
+                    left: Box::new(left),
+                    right: Box::new(right),
+                }
+            }
+            Expression::FunctionCall { function, args } => {
+                let fargs = args
+                    .iter()
+                    .map(|e| {
+                        self.generate_formattable_expression(
+                            eval_ctx, unit_lib, e, value_mode, false,
+                        )
+                    })
+                    .collect();
+                FormattableExpression::Function {
+                    name: function.clone(),
+                    args: Box::new(fargs),
+                }
+            }
+            Expression::DefinedUnit { name, child } => self.handle_unit(
+                eval_ctx,
+                unit_lib,
+                value_mode,
+                name.as_ref()
+                    .map(|n| unit_lib.resolve_defined_unit(&DefinedUnit::Defined(n.clone()))),
+                &child,
+            ),
+            Expression::LiteralUnit { name, child } => {
+                self.handle_unit(eval_ctx, unit_lib, value_mode, Some(name.as_str()), child)
+            }
+            Expression::VariableRef(name) => match value_mode {
+                ValueMode::NumbersNoUnit | ValueMode::NumbersWithUnit => {
+                    let (value, unit) = eval_ctx
+                        .get_variable(name)
+                        .expect("variable not found, call eval and get Ok before formatting");
+                    if let ValueMode::NumbersWithUnit = value_mode {
+                        let unit = match unit {
+                            Unit::Defined(d) => Some(unit_lib.resolve_defined_unit(&d).to_string()),
+                            Unit::Literal(l) => Some(l),
+                            Unit::None => None,
+                        };
+                        FormattableExpression::Number { value, unit }
+                    } else {
+                        FormattableExpression::Number { value, unit: None }
+                    }
+                }
+                ValueMode::NamedLiteralUnit | ValueMode::NamedNoUnit => {
+                    FormattableExpression::Variable(name.to_string())
+                }
+            },
+            Expression::NumberLiteral(v) => FormattableExpression::Number {
+                value: *v,
+                unit: None,
+            },
+            Expression::Negate(child) => {
+                if let Expression::Operator { operator, .. } = child.as_ref() {
+                    if self.operators[operator].should_parenthesize_left() {
+                        return FormattableExpression::Negate(Box::new(
+                            self.generate_formattable_expression(
+                                eval_ctx, unit_lib, child, value_mode, true,
+                            ),
+                        ));
+                    }
+                }
+                FormattableExpression::Negate(Box::new(
+                    self.generate_formattable_expression(
+                        eval_ctx, unit_lib, child, value_mode, false,
+                    ),
+                ))
+            }
         }
     }
 
@@ -130,6 +267,36 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                 self.formatter
                     .write_number(*value, unit.as_ref().map(|s| s.as_str()), out)
             }
+        }
+    }
+
+    fn handle_unit(
+        &self,
+        eval_ctx: &EvaluationContext,
+        unit_lib: &impl UnitLibrary,
+        value_mode: ValueMode,
+        unit: Option<&str>,
+        child: &Box<Expression>,
+    ) -> FormattableExpression {
+        if let ValueMode::NamedNoUnit | ValueMode::NumbersNoUnit = value_mode {
+            self.generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false)
+        } else if let Expression::NumberLiteral(v) = child.as_ref() {
+            FormattableExpression::Number {
+                value: *v,
+                unit: unit.map(str::to_string),
+            }
+        } else if let (Expression::VariableRef(var_name), ValueMode::NumbersWithUnit) =
+            (child.as_ref(), value_mode)
+        {
+            FormattableExpression::Number {
+                value: eval_ctx
+                    .get_variable(var_name)
+                    .expect("variable not found, call eval and get Ok before formatting")
+                    .0,
+                unit: unit.map(str::to_string),
+            }
+        } else {
+            self.generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false)
         }
     }
 
@@ -198,14 +365,14 @@ impl<F: LanguageFormatter> LibraryProvider for FormattableLibraryProvider<F> {
     fn operator_associative(&self, symbol: &str) -> bool {
         self.operators
             .get(symbol)
-            .expect("should call operator_exists before acessing operator")
+            .expect("should call operator_exists before accessing operator")
             .is_associative()
     }
 
     fn operator_precedence(&self, symbol: &str) -> u32 {
         self.operators
             .get(symbol)
-            .expect("should call operator_exists before acessing operator")
+            .expect("should call operator_exists before accessing operator")
             .precedence()
     }
 }
@@ -213,6 +380,10 @@ impl<F: LanguageFormatter> LibraryProvider for FormattableLibraryProvider<F> {
 pub trait BasicOperator<Formatter: LanguageFormatter> {
     const PRECEDENCE: u32;
     const ASSOCIATIVE: bool;
+
+    const SHOULD_PARENTHESIZE_LEFT: bool;
+    const SHOULD_PARENTHESIZE_RIGHT: bool;
+
     const SYMBOL: &'static str;
     /// Will be used for formatting, \$0 will be replaced by the left arg and \$1 will be replaced by the right arg  
     /// \$\$ becomes \$
@@ -228,6 +399,14 @@ impl<F: LanguageFormatter, T: BasicOperator<F>> FormattableOperator<F> for T {
 
     fn is_associative(&self) -> bool {
         T::ASSOCIATIVE
+    }
+
+    fn should_parenthesize_left(&self) -> bool {
+        T::SHOULD_PARENTHESIZE_LEFT
+    }
+
+    fn should_parenthesize_right(&self) -> bool {
+        T::SHOULD_PARENTHESIZE_RIGHT
     }
 
     fn symbol(&self) -> &str {
