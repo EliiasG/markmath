@@ -178,7 +178,7 @@ impl Expression {
         }
     }
 
-    fn eval<LP: LibraryProvider>(
+    pub fn eval<LP: LibraryProvider>(
         &self,
         provider: &LP,
         context: &mut EvaluationContext,

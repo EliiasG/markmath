@@ -1,4 +1,6 @@
-use crate::expression::{DefinedUnit, EvaluationContext, Expression, LibraryProvider, Unit};
+use crate::expression::{
+    DefinedUnit, EvaluationContext, EvaluationError, Expression, LibraryProvider, Unit,
+};
 use std::collections::HashMap;
 
 pub enum FormattableExpression {
@@ -38,6 +40,19 @@ pub trait LanguageFormatter: Sized {
     fn write_number(&self, number: f64, unit: Option<&str>, out: &mut String);
 
     fn write_variable(&self, variable: &str, out: &mut String);
+
+    fn format_single(
+        &self,
+        lib: &FormattableLibraryProvider<Self>,
+        expr: &FormattableExpression,
+        result: Option<&FormattableExpression>,
+    ) -> String;
+
+    fn format_multi(
+        &self,
+        lib: &FormattableLibraryProvider<Self>,
+        expr: &[(FormattableExpression, FormattableExpression)],
+    ) -> String;
 
     fn build_operators(&self) -> Vec<Box<dyn FormattableOperator<Self>>>;
 
@@ -96,7 +111,15 @@ pub enum ValueMode {
 }
 
 pub trait UnitLibrary: Sized {
-    fn resolve_defined_unit(&self, unit: &DefinedUnit) -> &str;
+    fn resolve_defined_unit(&mut self, unit: &DefinedUnit) -> &str;
+
+    fn unit_name(&mut self, unit: Unit) -> Option<String> {
+        match unit {
+            Unit::Defined(d) => Some(self.resolve_defined_unit(&d).to_string()),
+            Unit::Literal(l) => Some(l),
+            Unit::None => None,
+        }
+    }
 }
 
 pub struct FormattableLibraryProvider<F: LanguageFormatter> {
@@ -126,10 +149,58 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         }
     }
 
+    pub fn make_single_calculation(
+        &self,
+        eval_ctx: &mut EvaluationContext,
+        unit_lib: &mut impl UnitLibrary,
+        exp: &Expression,
+        value_mode: ValueMode,
+    ) -> Result<String, EvaluationError<<Self as LibraryProvider>::LibraryError>> {
+        let fexp = self.generate_formattable_expression(eval_ctx, unit_lib, exp, value_mode, false);
+        let mut res = String::new();
+        let mut res_fexp = None;
+        if let ValueMode::NumbersWithUnit | ValueMode::NumbersNoUnit = value_mode {
+            let (res_v, res_u) = exp.eval(self, eval_ctx)?;
+            res_fexp = Some(FormattableExpression::Number {
+                value: res_v,
+                unit: unit_lib.unit_name(res_u),
+            });
+        }
+        Ok(self.formatter.format_single(self, &fexp, res_fexp.as_ref()))
+    }
+
+    pub fn make_multi_calculation(
+        &self,
+        eval_ctx: &mut EvaluationContext,
+        unit_lib: &mut impl UnitLibrary,
+        exps: &[Expression],
+        display_units: bool,
+    ) -> Result<String, EvaluationError<<Self as LibraryProvider>::LibraryError>> {
+        let val_mode = if display_units {
+            ValueMode::NumbersWithUnit
+        } else {
+            ValueMode::NumbersNoUnit
+        };
+        #[rustfmt::skip]
+        let fexps = exps
+            .iter()
+            .map(|exp| {
+                let (r_v, r_u) = exp.eval(self, eval_ctx)?;
+                let unit = unit_lib.unit_name(r_u).filter(|_| display_units);
+                Ok((
+                    self.generate_formattable_expression(eval_ctx, unit_lib, exp, val_mode, false),
+                    FormattableExpression::Number { value: r_v, unit },
+                ))
+            })
+            .collect::<Result<Vec<_>, EvaluationError<<Self as LibraryProvider>::LibraryError>>>()?;
+        //    ^ rustfmt wanted the last 3 chars on a new line... ^
+        Ok(self.formatter.format_multi(self, &fexps))
+    }
+
     pub fn generate_formattable_expression(
         &self,
         eval_ctx: &EvaluationContext,
-        unit_lib: &impl UnitLibrary,
+        unit_lib: &mut impl UnitLibrary,
         exp: &Expression,
         value_mode: ValueMode,
         parenthesise: bool,
@@ -187,14 +258,20 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                     args: Box::new(fargs),
                 }
             }
-            Expression::DefinedUnit { name, child } => self.handle_unit(
-                eval_ctx,
-                unit_lib,
-                value_mode,
-                name.as_ref()
-                    .map(|n| unit_lib.resolve_defined_unit(&DefinedUnit::Defined(n.clone()))),
-                &child,
-            ),
+            Expression::DefinedUnit { name, child } => {
+                let name = name.as_ref().map(|n| {
+                    unit_lib
+                        .resolve_defined_unit(&DefinedUnit::Defined(n.clone()))
+                        .to_string()
+                });
+                self.handle_unit(
+                    eval_ctx,
+                    unit_lib,
+                    value_mode,
+                    name.as_ref().map(String::as_str),
+                    &child,
+                )
+            }
             Expression::LiteralUnit { name, child } => {
                 self.handle_unit(eval_ctx, unit_lib, value_mode, Some(name.as_str()), child)
             }
@@ -204,11 +281,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                         .get_variable(name)
                         .expect("variable not found, call eval and get Ok before formatting");
                     if let ValueMode::NumbersWithUnit = value_mode {
-                        let unit = match unit {
-                            Unit::Defined(d) => Some(unit_lib.resolve_defined_unit(&d).to_string()),
-                            Unit::Literal(l) => Some(l),
-                            Unit::None => None,
-                        };
+                        let unit = unit_lib.unit_name(unit);
                         FormattableExpression::Number { value, unit }
                     } else {
                         FormattableExpression::Number { value, unit: None }
@@ -273,7 +346,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
     fn handle_unit(
         &self,
         eval_ctx: &EvaluationContext,
-        unit_lib: &impl UnitLibrary,
+        unit_lib: &mut impl UnitLibrary,
         value_mode: ValueMode,
         unit: Option<&str>,
         child: &Box<Expression>,
