@@ -1,4 +1,4 @@
-use crate::parse::TokenTree;
+use crate::language::parse::TokenTree;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
@@ -30,6 +30,8 @@ pub enum DefinedUnit {
     Defined(String),
     Implicit {
         operator: String,
+        /// Nice to save here, as it makes it easier to resolve the unit later
+        associative: bool,
         left: Box<DefinedUnit>,
         right: Box<DefinedUnit>,
     },
@@ -201,6 +203,7 @@ impl Expression {
                     Unit::Defined(l_d) => match r_u {
                         Unit::Defined(r_d) => Unit::Defined(DefinedUnit::Implicit {
                             operator: operator.clone(),
+                            associative: provider.operator_associative(&operator),
                             left: Box::new(l_d),
                             right: Box::new(r_d),
                         }),

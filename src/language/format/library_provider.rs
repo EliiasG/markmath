@@ -1,126 +1,8 @@
-use crate::expression::{
-    DefinedUnit, EvaluationContext, EvaluationError, Expression, LibraryProvider, Unit,
+use super::*;
+use crate::language::expression::{
+    DefinedUnit, EvaluationContext, Expression, LibraryProvider, Unit,
 };
 use std::collections::HashMap;
-
-pub enum FormattableExpression {
-    Function {
-        name: String,
-        args: Box<Vec<FormattableExpression>>,
-    },
-    Operator {
-        operator: String,
-        left: Box<FormattableExpression>,
-        right: Box<FormattableExpression>,
-    },
-    Negate(Box<FormattableExpression>),
-    Parenthesis(Box<FormattableExpression>),
-    Variable(String),
-    Number {
-        value: f64,
-        unit: Option<String>,
-    },
-}
-
-pub trait LanguageFormatter: Sized {
-    fn parenthesise(
-        &self,
-        lib: &FormattableLibraryProvider<Self>,
-        expr: &FormattableExpression,
-        out: &mut String,
-    );
-
-    fn negate(
-        &self,
-        lib: &FormattableLibraryProvider<Self>,
-        expr: &FormattableExpression,
-        out: &mut String,
-    );
-
-    fn write_number(&self, number: f64, unit: Option<&str>, out: &mut String);
-
-    fn write_variable(&self, variable: &str, out: &mut String);
-
-    fn format_single(
-        &self,
-        lib: &FormattableLibraryProvider<Self>,
-        expr: &FormattableExpression,
-        result: Option<&FormattableExpression>,
-    ) -> String;
-
-    fn format_multi(
-        &self,
-        lib: &FormattableLibraryProvider<Self>,
-        expr: &[(FormattableExpression, FormattableExpression)],
-    ) -> String;
-
-    fn build_operators(&self) -> Vec<Box<dyn FormattableOperator<Self>>>;
-
-    fn build_functions(&self) -> Vec<Box<dyn FormattableFunction<Self>>>;
-}
-
-pub trait FormattableOperator<Formatter: LanguageFormatter> {
-    fn precedence(&self) -> u32;
-
-    fn is_associative(&self) -> bool;
-
-    /// Werther parenthesis can be added to the left (false for something like divide line or power)  
-    fn should_parenthesize_left(&self) -> bool;
-
-    /// Werther parenthesis can be to the right added (false for something like divide line)  
-    fn should_parenthesize_right(&self) -> bool;
-
-    fn symbol(&self) -> &str;
-
-    fn eval(&self, left: f64, right: f64) -> Result<f64, String>;
-
-    fn write(
-        &self,
-        lib: &FormattableLibraryProvider<Formatter>,
-        out: &mut String,
-        left: &FormattableExpression,
-        right: &FormattableExpression,
-    );
-}
-
-pub trait FormattableFunction<Formatter: LanguageFormatter> {
-    fn name(&self) -> &str;
-
-    fn supports_arg_count(&self, argc: usize) -> bool;
-
-    fn eval(&self, args: &[f64]) -> Result<f64, String>;
-
-    fn write(
-        &self,
-        lib: &FormattableLibraryProvider<Formatter>,
-        out: &mut String,
-        args: &[FormattableExpression],
-    );
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ValueMode {
-    /// All variables get converted to numbers, and units are added to all numbers  
-    NumbersWithUnit,
-    /// All variables get converted to numbers, but no units on any numbers
-    NumbersNoUnit,
-    /// Variables get names, and number literals are with units
-    NamedLiteralUnit,
-    /// Variables get names, and units are never added
-    NamedNoUnit,
-}
-
-pub trait UnitLibrary: Sized {
-    fn resolve_defined_unit(&mut self, unit: &DefinedUnit) -> &str;
-
-    fn unit_name(&mut self, unit: Unit) -> Option<String> {
-        match unit {
-            Unit::Defined(d) => Some(self.resolve_defined_unit(&d).to_string()),
-            Unit::Literal(l) => Some(l),
-            Unit::None => None,
-        }
-    }
-}
 
 pub struct FormattableLibraryProvider<F: LanguageFormatter> {
     functions: HashMap<String, Box<dyn FormattableFunction<F>>>,
@@ -149,6 +31,16 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         }
     }
 
+    pub fn make_calculations<'a, Lib: UnitLibrary>(&'a self, eval_ctx: &'a mut EvaluationContext, unit_lib: &'a mut Lib) -> CalculationsBuilder<'a, F, Lib> {
+        CalculationsBuilder {
+            lib: self,
+            eval_ctx,
+            unit_lib,
+            calculations: Calculations(Vec::new()),
+        }
+    }
+
+    /*
     pub fn make_single_calculation(
         &self,
         eval_ctx: &mut EvaluationContext,
@@ -157,7 +49,6 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         value_mode: ValueMode,
     ) -> Result<String, EvaluationError<<Self as LibraryProvider>::LibraryError>> {
         let fexp = self.generate_formattable_expression(eval_ctx, unit_lib, exp, value_mode, false);
-        let mut res = String::new();
         let mut res_fexp = None;
         if let ValueMode::NumbersWithUnit | ValueMode::NumbersNoUnit = value_mode {
             let (res_v, res_u) = exp.eval(self, eval_ctx)?;
@@ -193,8 +84,37 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                 ))
             })
             .collect::<Result<Vec<_>, EvaluationError<<Self as LibraryProvider>::LibraryError>>>()?;
-        //    ^ rustfmt wanted the last 3 chars on a new line... ^
         Ok(self.formatter.format_multi(self, &fexps))
+    }
+    */
+    pub fn format_calculations(
+        &self,
+        unit_lib: &impl UnitLibrary,
+        calculations: Calculations,
+    ) -> Vec<String> {
+        calculations
+            .0
+            .into_iter()
+            .map(|c| match c {
+                Calculation::Single { expr, result } => {
+                    let expr = self.resolve_formattable_expression(unit_lib, expr);
+                    let result = result.map(|r| self.resolve_formattable_expression(unit_lib, r));
+                    self.formatter.format_single(self, &expr, result.as_ref())
+                }
+                Calculation::Multi(v) => {
+                    let res: Vec<_> = v
+                        .into_iter()
+                        .map(|(c, r)| {
+                            (
+                                self.resolve_formattable_expression(unit_lib, c),
+                                self.resolve_formattable_expression(unit_lib, r),
+                            )
+                        })
+                        .collect();
+                    self.formatter.format_multi(self, &res)
+                }
+            })
+            .collect()
     }
 
     pub fn generate_formattable_expression(
@@ -204,13 +124,12 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         exp: &Expression,
         value_mode: ValueMode,
         parenthesise: bool,
-    ) -> FormattableExpression {
+    ) -> UnresolvedFormattableExpression {
         if parenthesise {
             return FormattableExpression::Parenthesis(Box::new(
                 self.generate_formattable_expression(eval_ctx, unit_lib, exp, value_mode, false),
             ));
         }
-
         match exp {
             Expression::VariableAssign { child, .. } => {
                 self.generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false)
@@ -259,32 +178,38 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                 }
             }
             Expression::DefinedUnit { name, child } => {
-                let name = name.as_ref().map(|n| {
-                    unit_lib
-                        .resolve_defined_unit(&DefinedUnit::Defined(n.clone()))
-                        .to_string()
-                });
-                self.handle_unit(
-                    eval_ctx,
-                    unit_lib,
-                    value_mode,
-                    name.as_ref().map(String::as_str),
-                    &child,
-                )
+                let unit = name
+                    .as_ref()
+                    .map(|name| {
+                        let d = DefinedUnit::Defined(name.clone());
+                        unit_lib.cache_defined_unit(&d);
+                        Unit::Defined(d)
+                    })
+                    .unwrap_or(Unit::None);
+                self.handle_unit(eval_ctx, unit_lib, value_mode, unit, &child)
             }
-            Expression::LiteralUnit { name, child } => {
-                self.handle_unit(eval_ctx, unit_lib, value_mode, Some(name.as_str()), child)
-            }
+            Expression::LiteralUnit { name, child } => self.handle_unit(
+                eval_ctx,
+                unit_lib,
+                value_mode,
+                Unit::Literal(name.clone()),
+                child,
+            ),
             Expression::VariableRef(name) => match value_mode {
                 ValueMode::NumbersNoUnit | ValueMode::NumbersWithUnit => {
                     let (value, unit) = eval_ctx
                         .get_variable(name)
                         .expect("variable not found, call eval and get Ok before formatting");
-                    if let ValueMode::NumbersWithUnit = value_mode {
-                        let unit = unit_lib.unit_name(unit);
+                    if value_mode == ValueMode::NumbersWithUnit {
+                        if let Unit::Defined(d) = &unit {
+                            unit_lib.cache_defined_unit(d);
+                        }
                         FormattableExpression::Number { value, unit }
                     } else {
-                        FormattableExpression::Number { value, unit: None }
+                        FormattableExpression::Number {
+                            value,
+                            unit: Unit::None,
+                        }
                     }
                 }
                 ValueMode::NamedLiteralUnit | ValueMode::NamedNoUnit => {
@@ -293,7 +218,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
             },
             Expression::NumberLiteral(v) => FormattableExpression::Number {
                 value: *v,
-                unit: None,
+                unit: Unit::None,
             },
             Expression::Negate(child) => {
                 if let Expression::Operator { operator, .. } = child.as_ref() {
@@ -314,7 +239,19 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         }
     }
 
-    pub fn write_expression(&self, exp: &FormattableExpression, out: &mut String) {
+    pub fn resolve_formattable_expression(
+        &self,
+        unit_lib: &impl UnitLibrary,
+        unresolved: UnresolvedFormattableExpression,
+    ) -> ResolvedFormattableExpression {
+        unresolved.map_unit(&mut |unit| match unit {
+            Unit::Defined(d) => Some(unit_lib.get_defined_unit(&d).to_string()),
+            Unit::Literal(l) => Some(l),
+            Unit::None => None,
+        })
+    }
+
+    pub fn write_expression(&self, exp: &ResolvedFormattableExpression, out: &mut String) {
         match exp {
             FormattableExpression::Operator {
                 operator,
@@ -348,32 +285,38 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         eval_ctx: &EvaluationContext,
         unit_lib: &mut impl UnitLibrary,
         value_mode: ValueMode,
-        unit: Option<&str>,
+        unit: Unit,
         child: &Box<Expression>,
-    ) -> FormattableExpression {
-        if let ValueMode::NamedNoUnit | ValueMode::NumbersNoUnit = value_mode {
-            self.generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false)
+    ) -> UnresolvedFormattableExpression {
+        let value = if let ValueMode::NamedNoUnit | ValueMode::NumbersNoUnit = value_mode {
+            return self
+                .generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false);
         } else if let Expression::NumberLiteral(v) = child.as_ref() {
-            FormattableExpression::Number {
-                value: *v,
-                unit: unit.map(str::to_string),
-            }
+            *v
         } else if let (Expression::VariableRef(var_name), ValueMode::NumbersWithUnit) =
             (child.as_ref(), value_mode)
         {
-            FormattableExpression::Number {
-                value: eval_ctx
-                    .get_variable(var_name)
-                    .expect("variable not found, call eval and get Ok before formatting")
-                    .0,
-                unit: unit.map(str::to_string),
-            }
+            eval_ctx
+                .get_variable(var_name)
+                .expect("variable not found, call eval and get Ok before formatting")
+                .0
         } else {
-            self.generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false)
+            return self
+                .generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false);
+        };
+        if let Unit::Defined(d) = &unit {
+            unit_lib.cache_defined_unit(&d);
         }
+        FormattableExpression::Number { value, unit }
     }
 
-    fn fmt_expression(&self, args: &[&FormattableExpression], fmt: &str, out: &mut String) {
+    /// Appends fmt to out, where $n becomes the formatted result of args\[n\].  
+    pub fn fmt_expression(
+        &self,
+        fmt: &str,
+        args: &[&ResolvedFormattableExpression],
+        out: &mut String,
+    ) {
         let mut exp = false;
         let mut num = String::new();
         let push = |num: &mut String, out: &mut String| {
@@ -447,91 +390,5 @@ impl<F: LanguageFormatter> LibraryProvider for FormattableLibraryProvider<F> {
             .get(symbol)
             .expect("should call operator_exists before accessing operator")
             .precedence()
-    }
-}
-
-pub trait BasicOperator<Formatter: LanguageFormatter> {
-    const PRECEDENCE: u32;
-    const ASSOCIATIVE: bool;
-
-    const SHOULD_PARENTHESIZE_LEFT: bool;
-    const SHOULD_PARENTHESIZE_RIGHT: bool;
-
-    const SYMBOL: &'static str;
-    /// Will be used for formatting, \$0 will be replaced by the left arg and \$1 will be replaced by the right arg  
-    /// \$\$ becomes \$
-    const FMT: &'static str;
-
-    fn eval(&self, left: f64, right: f64) -> Result<f64, String>;
-}
-
-impl<F: LanguageFormatter, T: BasicOperator<F>> FormattableOperator<F> for T {
-    fn precedence(&self) -> u32 {
-        T::PRECEDENCE
-    }
-
-    fn is_associative(&self) -> bool {
-        T::ASSOCIATIVE
-    }
-
-    fn should_parenthesize_left(&self) -> bool {
-        T::SHOULD_PARENTHESIZE_LEFT
-    }
-
-    fn should_parenthesize_right(&self) -> bool {
-        T::SHOULD_PARENTHESIZE_RIGHT
-    }
-
-    fn symbol(&self) -> &str {
-        T::SYMBOL
-    }
-
-    fn eval(&self, left: f64, right: f64) -> Result<f64, String> {
-        self.eval(left, right)
-    }
-
-    fn write(
-        &self,
-        lib: &FormattableLibraryProvider<F>,
-        out: &mut String,
-        left: &FormattableExpression,
-        right: &FormattableExpression,
-    ) {
-        lib.fmt_expression(&[left, right], T::FMT, out);
-    }
-}
-
-pub trait BasicFunction<Formatter: LanguageFormatter> {
-    const NAME: &'static str;
-    const ARG_COUNT: usize;
-
-    /// \$n will become param n where n is a number  
-    /// \$\$ becomes \$
-    const FMT: &'static str;
-
-    fn eval(&self, args: &[f64]) -> Result<f64, String>;
-}
-
-impl<F: LanguageFormatter, T: BasicFunction<F>> FormattableFunction<F> for T {
-    fn name(&self) -> &str {
-        T::NAME
-    }
-
-    fn supports_arg_count(&self, argc: usize) -> bool {
-        argc == T::ARG_COUNT
-    }
-
-    fn eval(&self, args: &[f64]) -> Result<f64, String> {
-        self.eval(args)
-    }
-
-    fn write(
-        &self,
-        lib: &FormattableLibraryProvider<F>,
-        out: &mut String,
-        args: &[FormattableExpression],
-    ) {
-        let refs: Vec<_> = args.iter().collect();
-        lib.fmt_expression(&refs, T::FMT, out);
     }
 }
