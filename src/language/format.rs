@@ -249,6 +249,9 @@ pub trait UnitLibrary: Sized {
     /// This can be used to make a list of what units should be resolved before resolution.  
     fn cache_defined_unit(&mut self, unit: &DefinedUnit);
 
+    /// Called after calls of [cache_defined_unit](Self::cache_defined_unit), after this is called, units should be available for [get_defined_unit](Self::get_defined_unit)
+    fn resolve_units(&mut self) {}
+
     /// Called during formatting to get unit names.
     /// It should be expected that [cache_defined_unit](Self::cache_defined_unit) has been called for the given unit.
     fn get_defined_unit(&self, unit: &DefinedUnit) -> &str;
@@ -262,12 +265,14 @@ pub struct CalculationsBuilder<'a, Formatter: LanguageFormatter, Lib: UnitLibrar
 }
 
 impl<'a, F: LanguageFormatter, L: UnitLibrary> CalculationsBuilder<'a, F, L> {
-    fn add_single_calculation(
+    pub fn add_single_calculation(
         &mut self,
         exp: &Expression,
         value_mode: ValueMode,
-    ) -> Result<(), EvaluationError<<FormattableLibraryProvider<F> as LibraryProvider>::LibraryError>>
-    {
+    ) -> Result<
+        usize,
+        EvaluationError<<FormattableLibraryProvider<F> as LibraryProvider>::LibraryError>,
+    > {
         let mut result = None;
         if let ValueMode::NumbersWithUnit | ValueMode::NumbersNoUnit = value_mode {
             // important that eval happens before generating fexp
@@ -285,15 +290,17 @@ impl<'a, F: LanguageFormatter, L: UnitLibrary> CalculationsBuilder<'a, F, L> {
         self.calculations
             .0
             .push(Calculation::Single { expr, result });
-        Ok(())
+        Ok(self.calculations.0.len() - 1)
     }
 
-    fn add_multi_calculation(
+    pub fn add_multi_calculation(
         &mut self,
         exps: &[Expression],
         display_units: bool,
-    ) -> Result<(), EvaluationError<<FormattableLibraryProvider<F> as LibraryProvider>::LibraryError>>
-    {
+    ) -> Result<
+        usize,
+        EvaluationError<<FormattableLibraryProvider<F> as LibraryProvider>::LibraryError>,
+    > {
         let val_mode = if display_units {
             ValueMode::NumbersWithUnit
         } else {
@@ -311,10 +318,10 @@ impl<'a, F: LanguageFormatter, L: UnitLibrary> CalculationsBuilder<'a, F, L> {
             })
             .collect::<Result<Vec<_>, EvaluationError<_>>>()?;
         self.calculations.0.push(Calculation::Multi(fexps));
-        Ok(())
+        Ok(self.calculations.0.len() - 1)
     }
 
-    fn finish(self) -> Calculations {
+    pub fn finish(self) -> Calculations {
         self.calculations
     }
 }

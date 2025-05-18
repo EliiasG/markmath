@@ -1,9 +1,7 @@
 use crate::language::expression::{
     EvaluationContext, Expression, LibraryProvider,
 };
-use crate::language::format::{
-    FormattableLibraryProvider, LanguageFormatter, UnitLibrary, ValueMode,
-};
+use crate::language::format::{CalculationsBuilder, FormattableLibraryProvider, LanguageFormatter, UnitLibrary, ValueMode};
 use crate::language::parse;
 use std::mem;
 
@@ -11,19 +9,34 @@ pub fn parse_markdown<F: LanguageFormatter>(
     source: &str,
     eval_ctx: &mut EvaluationContext,
     unit_lib: &mut impl UnitLibrary,
-    lib: &mut FormattableLibraryProvider<F>,
+    lib: &FormattableLibraryProvider<F>,
 ) -> String {
     let mut blocks = get_blocks(source).into_iter();
-    let mut res = String::new();
+    let mut text_blocks = Vec::new();
+    let mut code_blocks = Vec::new();
+    let mut cb = lib.make_calculations(eval_ctx, unit_lib);
     loop {
         let Some(block) = blocks.next() else {
             break;
         };
-        res.push_str(&block);
+        text_blocks.push(block);
         let Some(block) = blocks.next() else {
             break;
         };
-        res.push_str(&handle_code_block(&block, eval_ctx, unit_lib, lib));
+        code_blocks.push(handle_code_block(&block, lib, &mut cb));
+    }
+    let calc = cb.finish();
+    let mut code = lib.format_calculations(unit_lib, calc);
+    let mut code_blocks: Vec<_> = code_blocks.into_iter().map(|block| match block {
+        Ok(i) => mem::take(&mut code[i]),
+        Err(s) => s,
+    }).collect();
+    let mut res = String::new();
+    for t in text_blocks {
+        res.push_str(&t);
+        if let Some(c) = code_blocks.pop() {
+            res.push_str(&c);
+        }
     }
     res
 }
@@ -48,12 +61,11 @@ fn get_blocks(source: &str) -> Vec<String> {
     blocks
 }
 
-fn handle_code_block<F: LanguageFormatter>(
+fn handle_code_block<F: LanguageFormatter, U: UnitLibrary>(
     block: &str,
-    eval_ctx: &mut EvaluationContext,
-    unit_lib: &mut impl UnitLibrary,
-    lib: &mut FormattableLibraryProvider<F>,
-) -> String {
+    lib: &FormattableLibraryProvider<F>,
+    cb: &mut CalculationsBuilder<F, U>,
+) -> Result<usize, String> {
     let mut render_vars = false;
     let mut render_units = false;
     let mut i = 0;
@@ -67,7 +79,7 @@ fn handle_code_block<F: LanguageFormatter>(
         } else if c == 'v' {
             render_vars = true;
         } else {
-            return format_err(&format!("Invalid, flag: {c}"));
+            return Err(format_err(&format!("Invalid, flag: {c}")));
         }
     }
     let val_mode = match (render_vars, render_units) {
@@ -93,18 +105,18 @@ fn handle_code_block<F: LanguageFormatter>(
         exps.push(exp);
     }
     if let Some((i, e)) = err {
-        return if lines.len() == 1 {
+        return Err(if lines.len() == 1 {
             format_err(&format!("Error: {e}"))
         } else {
             format_err(&format!("Error on line {i}: {e}"))
-        };
+        });
     }
     let res = if lines.len() == 1 {
-        lib.make_single_calculation(eval_ctx, unit_lib, &exps[0], val_mode)
+        cb.add_single_calculation(&exps[0], val_mode)
     } else {
-        lib.make_multi_calculation(eval_ctx, unit_lib, &exps, render_units)
+        cb.add_multi_calculation(&exps, render_units)
     };
-    res.unwrap_or_else(|e| format_err(&format!("{e:?}")))
+    res.map_err(|e| format_err(&format!("{e:?}")))
 }
 
 fn exp(source: &str, lib: &impl LibraryProvider) -> Result<Expression, String> {
@@ -119,5 +131,5 @@ fn exp(source: &str, lib: &impl LibraryProvider) -> Result<Expression, String> {
 }
 
 fn format_err(error: &str) -> String {
-    todo!("format error")
+    todo!("format error") 
 }

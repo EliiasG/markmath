@@ -39,54 +39,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
             calculations: Calculations(Vec::new()),
         }
     }
-
-    /*
-    pub fn make_single_calculation(
-        &self,
-        eval_ctx: &mut EvaluationContext,
-        unit_lib: &mut impl UnitLibrary,
-        exp: &Expression,
-        value_mode: ValueMode,
-    ) -> Result<String, EvaluationError<<Self as LibraryProvider>::LibraryError>> {
-        let fexp = self.generate_formattable_expression(eval_ctx, unit_lib, exp, value_mode, false);
-        let mut res_fexp = None;
-        if let ValueMode::NumbersWithUnit | ValueMode::NumbersNoUnit = value_mode {
-            let (res_v, res_u) = exp.eval(self, eval_ctx)?;
-            res_fexp = Some(FormattableExpression::Number {
-                value: res_v,
-                unit: unit_lib.unit_name(res_u),
-            });
-        }
-        Ok(self.formatter.format_single(self, &fexp, res_fexp.as_ref()))
-    }
-
-    pub fn make_multi_calculation(
-        &self,
-        eval_ctx: &mut EvaluationContext,
-        unit_lib: &mut impl UnitLibrary,
-        exps: &[Expression],
-        display_units: bool,
-    ) -> Result<String, EvaluationError<<Self as LibraryProvider>::LibraryError>> {
-        let val_mode = if display_units {
-            ValueMode::NumbersWithUnit
-        } else {
-            ValueMode::NumbersNoUnit
-        };
-        #[rustfmt::skip]
-        let fexps = exps
-            .iter()
-            .map(|exp| {
-                let (r_v, r_u) = exp.eval(self, eval_ctx)?;
-                let unit = unit_lib.unit_name(r_u).filter(|_| display_units);
-                Ok((
-                    self.generate_formattable_expression(eval_ctx, unit_lib, exp, val_mode, false),
-                    FormattableExpression::Number { value: r_v, unit },
-                ))
-            })
-            .collect::<Result<Vec<_>, EvaluationError<<Self as LibraryProvider>::LibraryError>>>()?;
-        Ok(self.formatter.format_multi(self, &fexps))
-    }
-    */
+    
     pub fn format_calculations(
         &self,
         unit_lib: &impl UnitLibrary,
