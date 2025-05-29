@@ -1,7 +1,7 @@
 use crate::language::expression::DefinedUnit;
 use crate::language::format::UnitLibrary;
 use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
+use std::fmt::{format, Display};
 use std::io::Write;
 use std::mem;
 use std::str::FromStr;
@@ -60,7 +60,7 @@ impl Display for UnitCollection {
             .map(|(a, b)| format!("{a};{b}"))
             .collect::<Vec<_>>()
             .join("\n")
-            + "\n"
+            + "\n\n"
             + &self
                 .operator_results
                 .iter()
@@ -111,13 +111,71 @@ impl FromStr for UnitCollection {
 pub struct CLIUnitLib {
     collection: UnitCollection,
     cache: Vec<DefinedUnit>,
+    interact: bool,
 }
 
 impl CLIUnitLib {
-    pub fn new(collection: UnitCollection) -> Self {
+    pub fn new(collection: UnitCollection, interact: bool) -> Self {
         Self {
             collection,
             cache: Vec::new(),
+            interact,
+        }
+    }
+
+    pub fn finish(self) -> UnitCollection {
+        self.collection
+    }
+
+    pub fn configure(&mut self) {
+        loop {
+            println!("\nUNIT CONFIG MODE");
+            println!("[1]: Continue    [2]: List unit names    [3]: List operator results    [4]: Rename unit    [5]: Change operator result");
+            match prompt("action: ", false).trim() {
+                "1" => return,
+                "2" => {
+                    println!("Unit names:");
+                    for (name, unit) in &self.collection.defined_units {
+                        println!("{name}: \"{unit}\"");
+                    }
+                }
+                "3" => {
+                    println!("Operator results:");
+                    for ((op, l, r), result) in &self.collection.operator_results {
+                        println!("{l} {op} {r}: {result}");
+                    }
+                }
+                "4" => {
+                    let unit = prompt("Unit to rename: ", true);
+                    if self.collection.get_defined_unit(&unit).is_none() {
+                        println!("Unit does not exist: {unit}");
+                        continue;
+                    }
+                    let name = prompt("Name: ", false);
+                    self.collection.add_defined_unit(unit, name);
+                }
+                "5" => {
+                    let op = prompt("Enter operator: ", false);
+                    let l = prompt("Enter left unit: ", true);
+                    let r = prompt("Enter right unit: ", true);
+                    // FIXME shit
+                    let assoc = "+*".contains(&op);
+                    if self.collection.get_operator_result(op.clone(), l.clone(), r.clone(), assoc).is_none() {
+                        println!("{l}{op}{r} does not exist");
+                        continue;
+                    }
+                    let res = prompt("Enter resulting unit: ", true);
+                    if self.collection.get_defined_unit(&res).is_none() {
+                        let unit_name = prompt(&format!("Name unit {res}: "), false);
+                        self.collection.add_defined_unit(res.clone(), unit_name);
+                    }
+                    self.collection.add_operator_result(op, l, r, res);
+                }
+                _ => {
+                    println!("Please enter a number 1..5");
+                    continue
+                }
+            }
         }
     }
 
@@ -145,17 +203,33 @@ impl CLIUnitLib {
                 ) {
                     res.to_string()
                 } else {
-                    print!("Enter result of {l} {operator} {r}: ");
-                    std::io::stdout().flush().unwrap();
-                    let mut input = String::new();
-                    std::io::stdin().read_line(&mut input).unwrap();
-                    let res = input.trim().to_string();
-                    self.collection.add_operator_result(operator, l, r, res.clone());
+                    let msg = format!("Enter result of {l} {operator} {r}: ");
+                    let res = prompt(&msg, true);
+                    self.collection
+                        .add_operator_result(operator, l, r, res.clone());
                     if self.collection.get_defined_unit(&res).is_none() {
                         missing_names.insert(res.clone());
                     }
                     res
                 }
+            }
+        }
+    }
+
+    fn get_internal_unit<'a>(&'a self, unit: &'a DefinedUnit) -> &'a str {
+        match unit {
+            DefinedUnit::Defined(name) => name,
+            DefinedUnit::Implicit {
+                operator,
+                associative,
+                left,
+                right,
+            } => {
+                let l = self.get_internal_unit(left).to_string();
+                let r = self.get_internal_unit(right).to_string();
+                self.collection
+                    .get_operator_result(operator.clone(), l, r, *associative)
+                    .unwrap()
             }
         }
     }
@@ -168,27 +242,47 @@ impl UnitLibrary for CLIUnitLib {
     }
 
     fn resolve_units(&mut self) {
+        if !self.interact {
+            return;
+        }
         let mut missing = HashSet::new();
         for unit in mem::take(&mut self.cache) {
             self.resolve_unit(unit, &mut missing);
         }
         for m in missing {
-            print!("Name unit {m}: ");
-            std::io::stdout().flush().unwrap();
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
-            self.collection.add_defined_unit(m, input);
+            let msg = format!("Name unit {m}: ");
+            self.collection.add_defined_unit(m, prompt(&msg, false));
         }
     }
 
-    fn get_defined_unit(&self, unit: &DefinedUnit) -> &str {
-        match unit {
-            DefinedUnit::Defined(name) => self.collection.get_defined_unit(name).unwrap(),
-            DefinedUnit::Implicit { operator, associative, left, right } => {
-                let l = self.get_defined_unit(left).to_string();
-                let r = self.get_defined_unit(right).to_string();
-                self.collection.get_operator_result(operator.clone(), l, r, *associative).unwrap()
+    fn get_defined_unit(&self, unit: &DefinedUnit) -> String {
+        if !self.interact {
+            match unit {
+                DefinedUnit::Defined(d) => d.clone(),
+                DefinedUnit::Implicit { operator, left, right, .. } => format!("{} {} {}", self.get_defined_unit(left), operator, self.get_defined_unit(right)),
             }
+        } else {
+            self.collection
+                .get_defined_unit(self.get_internal_unit(unit))
+                .unwrap().to_string()
         }
+    }
+}
+
+fn prompt(message: &str, name: bool) -> String {
+    print!("{}", message);
+    std::io::stdout().flush().unwrap();
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+    input = input.trim().to_string();
+    let starts_with_num = input.chars().next().map(char::is_numeric).unwrap_or(true);
+    let valid_chars = input.chars().all(|c| c.is_alphanumeric() || c == '_');
+    if name && (starts_with_num || !valid_chars) {
+        println!(
+            "please enter a valid name (must be alphanumeric + '_', and cannot start with digit)"
+        );
+        prompt(message, true)
+    } else {
+        input
     }
 }

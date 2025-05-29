@@ -31,7 +31,11 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         }
     }
 
-    pub fn make_calculations<'a, Lib: UnitLibrary>(&'a self, eval_ctx: &'a mut EvaluationContext, unit_lib: &'a mut Lib) -> CalculationsBuilder<'a, F, Lib> {
+    pub fn make_calculations<'a, Lib: UnitLibrary>(
+        &'a self,
+        eval_ctx: &'a mut EvaluationContext,
+        unit_lib: &'a mut Lib,
+    ) -> CalculationsBuilder<'a, F, Lib> {
         CalculationsBuilder {
             lib: self,
             eval_ctx,
@@ -39,7 +43,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
             calculations: Calculations(Vec::new()),
         }
     }
-    
+
     pub fn format_calculations(
         &self,
         unit_lib: &impl UnitLibrary,
@@ -174,6 +178,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                 unit: Unit::None,
             },
             Expression::Negate(child) => {
+                // handle operator parenthesis eg. -(a+b)
                 if let Expression::Operator { operator, .. } = child.as_ref() {
                     if self.operators[operator].should_parenthesize_left() {
                         return FormattableExpression::Negate(Box::new(
@@ -232,7 +237,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
             }
         }
     }
-
+    
     fn handle_unit(
         &self,
         eval_ctx: &EvaluationContext,
@@ -241,10 +246,11 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         unit: Unit,
         child: &Box<Expression>,
     ) -> UnresolvedFormattableExpression {
-        let value = if let ValueMode::NamedNoUnit | ValueMode::NumbersNoUnit = value_mode {
+        if let ValueMode::NamedNoUnit | ValueMode::NumbersNoUnit = value_mode {
             return self
                 .generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false);
-        } else if let Expression::NumberLiteral(v) = child.as_ref() {
+        };
+        let value = if let Expression::NumberLiteral(v) = child.as_ref() {
             *v
         } else if let (Expression::VariableRef(var_name), ValueMode::NumbersWithUnit) =
             (child.as_ref(), value_mode)
@@ -273,9 +279,11 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         let mut exp = false;
         let mut num = String::new();
         let push = |num: &mut String, out: &mut String| {
-            let n: usize = num.parse().unwrap();
-            num.clear();
-            self.write_expression(args[n], out);
+            if !num.is_empty() {
+                let n: usize = num.parse().unwrap();
+                num.clear();
+                self.write_expression(args[n], out);
+            }
         };
         for c in fmt.chars() {
             if exp {

@@ -96,6 +96,7 @@ impl Debug for ExpressionError {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Expression {
     VariableAssign {
         name: String,
@@ -141,6 +142,11 @@ impl Expression {
                     .into_iter()
                     .map(|tt| Self::new(tt, provider))
                     .collect::<Result<_, _>>()?;
+                for op in operators.iter() {
+                    if !provider.operator_exists(&op) {
+                        return Err(ExpressionError::InvalidOperator(op.clone()));
+                    }
+                }
                 Ok(transform_operators(provider, operators, children))
             }
             TokenTree::DefinedUnit { name, child } => Ok(Self::DefinedUnit {
@@ -167,16 +173,15 @@ impl Expression {
                     })
                 }
             }
-
             TokenTree::VariableRef(name) => Ok(Self::VariableRef(name)),
-            TokenTree::NumberLiteral(val) => {
-                if let Ok(v) = val.parse() {
-                    Ok(Self::NumberLiteral(v))
+            TokenTree::NumberLiteral(val) => Ok(Self::NumberLiteral(parse_number(&val)?)),
+            TokenTree::Negate(child) => {
+                if let TokenTree::NumberLiteral(v) = child.as_ref() {
+                    Ok(Self::NumberLiteral(-parse_number(v)?))
                 } else {
-                    Err(ExpressionError::InvalidNumber(val))
+                    Ok(Self::Negate(Box::new(Self::new(*child, provider)?)))
                 }
             }
-            TokenTree::Negate(child) => Ok(Self::Negate(Box::new(Self::new(*child, provider)?))),
         }
     }
 
@@ -239,8 +244,9 @@ impl Expression {
                 let (r, _) = child.eval(provider, context)?;
                 Ok((
                     r,
-                    name.as_ref()
-                        .map_or(Unit::None, |n| Unit::Defined(DefinedUnit::Defined(n.clone())))
+                    name.as_ref().map_or(Unit::None, |n| {
+                        Unit::Defined(DefinedUnit::Defined(n.clone()))
+                    }),
                 ))
             }
             Expression::LiteralUnit { name, child } => {
@@ -253,6 +259,14 @@ impl Expression {
                 Ok((-r, u))
             }
         }
+    }
+}
+
+fn parse_number(val: &str) -> Result<f64, ExpressionError> {
+    if let Ok(v) = val.parse() {
+        Ok(v)
+    } else {
+        Err(ExpressionError::InvalidNumber(val.to_string()))
     }
 }
 

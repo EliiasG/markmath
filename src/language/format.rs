@@ -130,6 +130,21 @@ pub trait FormattableOperator<Formatter: LanguageFormatter> {
     );
 }
 
+pub trait FormattableFunction<Formatter: LanguageFormatter> {
+    fn name(&self) -> &str;
+
+    fn supports_arg_count(&self, argc: usize) -> bool;
+
+    fn eval(&self, args: &[f64]) -> Result<f64, String>;
+
+    fn write(
+        &self,
+        lib: &FormattableLibraryProvider<Formatter>,
+        out: &mut String,
+        args: &[ResolvedFormattableExpression],
+    );
+}
+
 pub trait BasicOperator<Formatter: LanguageFormatter> {
     const PRECEDENCE: u32;
     const ASSOCIATIVE: bool;
@@ -216,21 +231,6 @@ impl<F: LanguageFormatter, T: BasicFunction<F>> FormattableFunction<F> for T {
     }
 }
 
-pub trait FormattableFunction<Formatter: LanguageFormatter> {
-    fn name(&self) -> &str;
-
-    fn supports_arg_count(&self, argc: usize) -> bool;
-
-    fn eval(&self, args: &[f64]) -> Result<f64, String>;
-
-    fn write(
-        &self,
-        lib: &FormattableLibraryProvider<Formatter>,
-        out: &mut String,
-        args: &[ResolvedFormattableExpression],
-    );
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValueMode {
     /// All variables get converted to numbers, and units are added to all numbers  
@@ -254,7 +254,7 @@ pub trait UnitLibrary: Sized {
 
     /// Called during formatting to get unit names.
     /// It should be expected that [cache_defined_unit](Self::cache_defined_unit) has been called for the given unit.
-    fn get_defined_unit(&self, unit: &DefinedUnit) -> &str;
+    fn get_defined_unit(&self, unit: &DefinedUnit) -> String;
 }
 
 pub struct CalculationsBuilder<'a, Formatter: LanguageFormatter, Lib: UnitLibrary> {
@@ -277,6 +277,9 @@ impl<'a, F: LanguageFormatter, L: UnitLibrary> CalculationsBuilder<'a, F, L> {
         if let ValueMode::NumbersWithUnit | ValueMode::NumbersNoUnit = value_mode {
             // important that eval happens before generating fexp
             let (value, unit) = exp.eval(self.lib, self.eval_ctx)?;
+            if let Unit::Defined(d) = &unit {
+                self.unit_lib.cache_defined_unit(d);
+            }
             result = Some(UnresolvedFormattableExpression::Number { value, unit });
         }
         // okay to generate without evaluating if variable values are not needed
@@ -311,6 +314,9 @@ impl<'a, F: LanguageFormatter, L: UnitLibrary> CalculationsBuilder<'a, F, L> {
             .iter()
             .map(|exp| {
                 let (value, unit) = exp.eval(self.lib, self.eval_ctx)?;
+                if let Unit::Defined(d) = &unit {
+                    self.unit_lib.cache_defined_unit(d);
+                }
                 Ok((
                     self.lib.generate_formattable_expression(self.eval_ctx, self.unit_lib, exp, val_mode, false),
                     FormattableExpression::Number { value, unit },

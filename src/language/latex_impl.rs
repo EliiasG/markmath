@@ -1,4 +1,10 @@
-use crate::language::format::{BasicOperator, FormattableFunction, FormattableLibraryProvider, FormattableOperator, LanguageFormatter, ResolvedFormattableExpression};
+mod functions;
+mod operators;
+
+use crate::language::format::{
+    FormattableFunction, FormattableLibraryProvider, FormattableOperator, LanguageFormatter,
+    ResolvedFormattableExpression,
+};
 
 pub struct LatexFormatter {
     pub precision: usize,
@@ -24,16 +30,19 @@ impl LanguageFormatter for LatexFormatter {
     }
 
     fn write_number(&self, number: f64, unit: Option<&str>, out: &mut String) {
-        // TODO clean off the \scriptsize if no unit
-        out.push_str(&format!(
-            "\\textbf{{{number:.prec$}}}\\text{{\\scriptsize{{{uni}}}}}",
-            prec = self.precision,
-            uni = unit.unwrap_or("")
-        ))
+        let num = format!("{:.*}", self.precision, number);
+        let num = num.trim_end_matches('0').trim_end_matches('.');
+        let unit = unit
+            .map(|u| format!("\\small\\text{{ {u}}}\\normalsize"))
+            .unwrap_or(String::new());
+        out.push_str(&format!("{num}{unit}"))
     }
 
     fn write_variable(&self, variable: &str, out: &mut String) {
-        todo!("format vars")
+        let parts: Vec<_> = variable.split('_').collect();
+        let mut r = parts.join("_{");
+        r.push_str(&"}".repeat(parts.len()-1));
+        out.push_str(&format!("\\mathit{{{}}}", &r));
     }
 
     fn format_single(
@@ -44,7 +53,7 @@ impl LanguageFormatter for LatexFormatter {
     ) -> String {
         let mut res = String::new();
         if let Some(result) = result {
-            lib.fmt_expression("$$$0=$1$$", &[expr, result], &mut res);
+            lib.fmt_expression("$$$0 = $1$$", &[expr, result], &mut res);
         } else {
             lib.fmt_expression("$$$0$$", &[expr], &mut res);
         }
@@ -60,29 +69,15 @@ impl LanguageFormatter for LatexFormatter {
         for (exp, res) in expr {
             lib.fmt_expression("$0 &= $1\\\\ \\\\\n", &[exp, res], &mut out);
         }
-        out.push_str("\\end{align*}\n");
+        out.push_str("\\end{align*} $$");
         out
     }
 
     fn build_operators(&self) -> Vec<Box<dyn FormattableOperator<Self>>> {
-        todo!()
+        operators::operators()
     }
 
     fn build_functions(&self) -> Vec<Box<dyn FormattableFunction<Self>>> {
-        todo!()
-    }
-}
-
-struct Add;
-impl BasicOperator<LatexFormatter> for Add {
-    const PRECEDENCE: u32 = 0;
-    const ASSOCIATIVE: bool = true;
-    const SHOULD_PARENTHESIZE_LEFT: bool = true;
-    const SHOULD_PARENTHESIZE_RIGHT: bool = true;
-    const SYMBOL: &'static str = "+";
-    const FMT: &'static str = "$0 + $1";
-
-    fn eval(&self, left: f64, right: f64) -> Result<f64, String> {
-        Ok(left + right)
+        functions::functions()
     }
 }

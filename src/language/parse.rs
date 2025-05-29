@@ -267,7 +267,15 @@ fn tokenize_source(expr: &str) -> Result<Vec<SourceToken>, TokenizationError> {
     // Takes the token as argument, to not perm borrow
     let mut push_token = |token: &mut Option<SourceToken>| {
         if let Some(token) = token.take() {
-            tokens.push(token);
+            match &token {
+                SourceToken::Operator(op) if op.ends_with("-") && op.len() > 1 => {
+                    tokens.push(SourceToken::Operator(op[..op.len() - 1].to_string()));
+                    tokens.push(SourceToken::Operator(op[op.len() - 1..op.len()].to_string()));
+                },
+                _ => {
+                    tokens.push(token);
+                }
+            }
         }
     };
     for c in expr.chars() {

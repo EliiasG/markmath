@@ -26,15 +26,16 @@ pub fn parse_markdown<F: LanguageFormatter>(
         code_blocks.push(handle_code_block(&block, lib, &mut cb));
     }
     let calc = cb.finish();
+    unit_lib.resolve_units();
     let mut code = lib.format_calculations(unit_lib, calc);
-    let mut code_blocks: Vec<_> = code_blocks.into_iter().map(|block| match block {
-        Ok(i) => mem::take(&mut code[i]),
+    let mut code_blocks = code_blocks.into_iter().map(|block| match block {
+        Ok(i) => i.map(|i| mem::take(&mut code[i])).unwrap_or_else(String::new),
         Err(s) => s,
-    }).collect();
+    }).collect::<Vec<_>>().into_iter();
     let mut res = String::new();
     for t in text_blocks {
         res.push_str(&t);
-        if let Some(c) = code_blocks.pop() {
+        if let Some(c) = code_blocks.next() {
             res.push_str(&c);
         }
     }
@@ -65,21 +66,21 @@ fn handle_code_block<F: LanguageFormatter, U: UnitLibrary>(
     block: &str,
     lib: &FormattableLibraryProvider<F>,
     cb: &mut CalculationsBuilder<F, U>,
-) -> Result<usize, String> {
+) -> Result<Option<usize>, String> {
     let mut render_vars = false;
-    let mut render_units = false;
+    let mut render_units = true;
+    let mut visible = true;
     let mut i = 0;
     for (j, c) in block.char_indices() {
         if c.is_whitespace() {
             i = j;
             break;
         }
-        if c == 'u' {
-            render_units = false;
-        } else if c == 'v' {
-            render_vars = true;
-        } else {
-            return Err(format_err(&format!("Invalid, flag: {c}")));
+        match c {
+            'u' => render_units = false,
+            'v' => render_vars = true,
+            'i' => visible = false,
+            _ => return Err(format_err(&format!("Invalid preflag: {c}"))),
         }
     }
     let val_mode = match (render_vars, render_units) {
@@ -88,7 +89,7 @@ fn handle_code_block<F: LanguageFormatter, U: UnitLibrary>(
         (true, false) => ValueMode::NamedNoUnit,
         (true, true) => ValueMode::NamedLiteralUnit,
     };
-    let mut lines: Vec<_> = block[i..].lines().collect();
+    let lines: Vec<_> = block[i..].lines().collect();
     let mut exps = Vec::new();
     let mut err = None;
     for (i, line) in lines.iter().enumerate() {
@@ -116,7 +117,7 @@ fn handle_code_block<F: LanguageFormatter, U: UnitLibrary>(
     } else {
         cb.add_multi_calculation(&exps, render_units)
     };
-    res.map_err(|e| format_err(&format!("{e:?}")))
+    res.map_err(|e| format_err(&format!("{e:?}"))).map(|r| Some(r).filter(|_| visible))
 }
 
 fn exp(source: &str, lib: &impl LibraryProvider) -> Result<Expression, String> {
@@ -131,5 +132,5 @@ fn exp(source: &str, lib: &impl LibraryProvider) -> Result<Expression, String> {
 }
 
 fn format_err(error: &str) -> String {
-    todo!("format error") 
+    format!("<span style=\"color:red\">{error}</span>")
 }
