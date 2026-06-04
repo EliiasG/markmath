@@ -4,6 +4,15 @@ use markmath::{run, CompileMode};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    assert!(args.len() >= 2);
     //run(CompileMode::Live, Path::new(&args[0]), Path::new(&args[1])).unwrap();
-    run(CompileMode::Live, Path::new(&"examples/test.md"), Path::new(&"examples/out.html")).unwrap();
+    let compile_mode = if args.contains(&"--live".to_string()) {
+        CompileMode::Live
+    } else if args.contains(&"--no-resolve".to_string()) {
+        CompileMode::NonResolving
+    } else {
+        CompileMode::Resolving
+    };
+    println!("{}", args.join(" "));
+    run(compile_mode, Path::new(&args[1]), Path::new(&args[2])).unwrap();
 }

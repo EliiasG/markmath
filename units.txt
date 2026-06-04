@@ -1,9 +1,0 @@
-hej;cza
-dsa;dsad asdas dad
-aber;caads
-m;Hejsa
-t;dsa  dsa
-bananer;ewq
-
-t;+;m;dsa
-bananer;/;aber;hej

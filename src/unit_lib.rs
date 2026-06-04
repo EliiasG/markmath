@@ -269,7 +269,7 @@ impl UnitLibrary for CLIUnitLib {
     }
 }
 
-fn prompt(message: &str, name: bool) -> String {
+fn prompt(message: &str, is_name: bool) -> String {
     print!("{}", message);
     std::io::stdout().flush().unwrap();
     let mut input = String::new();
@@ -277,7 +277,7 @@ fn prompt(message: &str, name: bool) -> String {
     input = input.trim().to_string();
     let starts_with_num = input.chars().next().map(char::is_numeric).unwrap_or(true);
     let valid_chars = input.chars().all(|c| c.is_alphanumeric() || c == '_');
-    if name && (starts_with_num || !valid_chars) {
+    if is_name && (starts_with_num || !valid_chars) {
         println!(
             "please enter a valid name (must be alphanumeric + '_', and cannot start with digit)"
         );

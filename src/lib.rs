@@ -11,7 +11,7 @@ use std::path::Path;
 use std::{fs, io, thread};
 use std::io::ErrorKind;
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 const UNIT_PATH: &str = "units.txt";
 
@@ -47,7 +47,16 @@ pub fn run(compile_mode: CompileMode, input: &Path, output: &Path) -> io::Result
     let out = output.with_extension("md");
     let mut unit_lib = CLIUnitLib::new(unit_collection, compile_mode == CompileMode::Resolving);
     let lib = FormattableLibraryProvider::new(LatexFormatter { precision: 5 });
+    let mut prev_modified = None;
     loop {
+        loop {
+            let new = fs::metadata(&input)?.modified()?;
+            if prev_modified == None || new > prev_modified.unwrap() {
+                prev_modified = Some(new);
+                break;
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
         let mut eval_ctx = EvaluationContext::new();
         let input = fs::read_to_string(&input)?;
         let res = markdown::parse_markdown(&input, &mut eval_ctx, &mut unit_lib, &lib);
@@ -65,7 +74,7 @@ pub fn run(compile_mode: CompileMode, input: &Path, output: &Path) -> io::Result
         if compile_mode != CompileMode::Live {
             break;
         }
-        thread::sleep(Duration::from_millis(500));
+
     }
     
     fs::write(UNIT_PATH, unit_lib.finish().to_string())?;

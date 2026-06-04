@@ -30,7 +30,7 @@ pub enum DefinedUnit {
     Defined(String),
     Implicit {
         operator: String,
-        /// Nice to save here, as it makes it easier to resolve the unit later
+        /// Nice to store here, as it makes it easier to resolve the unit later
         associative: bool,
         left: Box<DefinedUnit>,
         right: Box<DefinedUnit>,
