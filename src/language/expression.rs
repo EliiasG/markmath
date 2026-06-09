@@ -305,7 +305,7 @@ impl TransformNode {
                     left: l_right,
                     right,
                     op,
-                }),
+                }.transform(provider)),
                 op: l_op,
             }
         } else {
