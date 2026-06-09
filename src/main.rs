@@ -1,18 +1,44 @@
 use std::env;
-use std::path::Path;
-use markmath::{run, CompileMode};
+use std::path::{Path, PathBuf};
+use clap::Parser;
+use markmath::{configure, run, CompileMode};
+
+
+#[derive(Parser)]
+#[command(version, about = "A calculator for markdown")]
+struct Cli {
+    /// Source markdown document
+    #[arg(required_unless_present = "configure")]
+    input: Option<PathBuf>,
+
+    /// Output path
+    #[arg(required_unless_present = "configure")]
+    output: Option<PathBuf>,
+
+    #[arg(long)] live: bool,
+    #[arg(long)] no_resolve: bool,
+
+    /// Edit the unit library interactively, then exit
+    #[arg(long, conflicts_with_all = ["input", "output", "live", "no_resolve"])]
+    configure: bool,
+}
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    assert!(args.len() >= 3);
-    //run(CompileMode::Live, Path::new(&args[0]), Path::new(&args[1])).unwrap();
-    let compile_mode = if args.contains(&"--live".to_string()) {
+    let cli = Cli::parse();
+    if cli.configure {
+        if let Err(e) = configure() {
+            println!("{}", e);
+        }
+        return;
+    }
+    let compile_mode = if cli.live {
         CompileMode::Live
-    } else if args.contains(&"--no-resolve".to_string()) {
+    } else if cli.no_resolve {
         CompileMode::NonResolving
     } else {
         CompileMode::Resolving
     };
-    println!("{}", args.join(" "));
-    run(compile_mode, Path::new(&args[1]), Path::new(&args[2])).unwrap();
+    if let Err(e) = run(compile_mode, Path::new(&cli.input.expect("always some when !cli.configure")), Path::new(&cli.output.unwrap())) {
+        eprintln!("{}", e);
+    }
 }

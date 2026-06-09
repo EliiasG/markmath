@@ -22,22 +22,7 @@ pub enum CompileMode {
 }
 
 pub fn run(compile_mode: CompileMode, input: &Path, output: &Path) -> io::Result<()> {
-    let unit_collection = match fs::read_to_string(UNIT_PATH) {
-        Ok(s) => {
-            match s.parse() {
-                Ok(c) => c,
-                Err(e) => {
-                    println!("Error parsing units: {}", e);
-                    // return Ok cause no io err
-                    return Ok(());
-                }
-            }
-        }
-        Err(_) => {
-            println!("no unit collection, creating empty");
-            UnitCollection::new()
-        }
-    };
+    let unit_collection = load_units();
     let md_output = output.with_extension("md");
     let mut unit_lib = CLIUnitLib::new(unit_collection, compile_mode == CompileMode::Resolving);
     let lib = FormattableLibraryProvider::new(LatexFormatter { precision: 5 });
@@ -78,8 +63,35 @@ pub fn run(compile_mode: CompileMode, input: &Path, output: &Path) -> io::Result
         }
     }
 
+    // only resolving should modify units
     if compile_mode == CompileMode::Resolving {
-        fs::write(UNIT_PATH, unit_lib.finish().to_string())?;
+        save_units(&unit_lib.finish())?;
     }
+    Ok(())
+}
+
+pub fn configure() -> io::Result<()> {
+    let units = load_units();
+    let mut lib = CLIUnitLib::new(units, true);
+    lib.configure();
+    save_units(&lib.finish())?;
+    Ok(())
+}
+
+fn load_units() -> UnitCollection {
+    match fs::read_to_string(UNIT_PATH) {
+        Ok(s) => s.parse().unwrap_or_else(|e| {
+            println!("Error parsing units: {}\n\nContinuing with new units", e);
+            UnitCollection::new()
+        }),
+        Err(_) => {
+            println!("could not read unit collection, creating empty");
+            UnitCollection::new()
+        }
+    }
+}
+
+fn save_units(units: &UnitCollection) -> io::Result<()> {
+    fs::write(UNIT_PATH, units.to_string())?;
     Ok(())
 }
