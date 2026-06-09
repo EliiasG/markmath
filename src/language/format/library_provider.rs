@@ -133,7 +133,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                     .collect();
                 FormattableExpression::Function {
                     name: function.clone(),
-                    args: Box::new(fargs),
+                    args: fargs,
                 }
             }
             Expression::DefinedUnit { name, child } => {
@@ -245,16 +245,16 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
         unit_lib: &mut impl UnitLibrary,
         value_mode: ValueMode,
         unit: Unit,
-        child: &Box<Expression>,
+        child: &Expression,
     ) -> UnresolvedFormattableExpression {
         if let ValueMode::NamedNoUnit | ValueMode::NumbersNoUnit = value_mode {
             return self
                 .generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false);
         };
-        let value = if let Expression::NumberLiteral(v) = child.as_ref() {
+        let value = if let Expression::NumberLiteral(v) = child {
             *v
         } else if let (Expression::VariableRef(var_name), ValueMode::NumbersWithUnit) =
-            (child.as_ref(), value_mode)
+            (child, value_mode)
         {
             eval_ctx
                 .get_variable(var_name)

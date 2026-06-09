@@ -57,9 +57,9 @@ impl EvaluationContext {
 }
 
 pub enum ExpressionError {
-    InvalidFunction { name: String, param_c: usize },
+    UnknownFunction { name: String, param_c: usize },
+    UnknownOperator(String),
     InvalidNumber(String),
-    InvalidOperator(String),
 }
 
 pub enum EvaluationError<LibraryError: Debug> {
@@ -85,12 +85,12 @@ impl<LibraryError: Debug> From<LibraryError> for EvaluationError<LibraryError> {
 impl Debug for ExpressionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExpressionError::InvalidFunction { name, param_c } => write!(
+            ExpressionError::UnknownFunction { name, param_c } => write!(
                 f,
                 "Invalid function: '{}', with {} parameter(s)",
                 name, param_c
             ),
-            ExpressionError::InvalidOperator(op) => write!(f, "Invalid operator: '{}'", op),
+            ExpressionError::UnknownOperator(op) => write!(f, "Invalid operator: '{}'", op),
             ExpressionError::InvalidNumber(num) => write!(f, "Invalid number: '{}'", num),
         }
     }
@@ -144,7 +144,7 @@ impl Expression {
                     .collect::<Result<_, _>>()?;
                 for op in operators.iter() {
                     if !provider.operator_exists(op) {
-                        return Err(ExpressionError::InvalidOperator(op.clone()));
+                        return Err(ExpressionError::UnknownOperator(op.clone()));
                     }
                 }
                 Ok(transform_operators(provider, operators, children))
@@ -167,7 +167,7 @@ impl Expression {
                             .collect::<Result<_, _>>()?,
                     })
                 } else {
-                    Err(ExpressionError::InvalidFunction {
+                    Err(ExpressionError::UnknownFunction {
                         name,
                         param_c: args.len(),
                     })

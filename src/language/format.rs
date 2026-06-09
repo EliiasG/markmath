@@ -12,7 +12,7 @@ use crate::language::expression::{
 pub enum FormattableExpression<Unit> {
     Function {
         name: String,
-        args: Box<Vec<FormattableExpression<Unit>>>,
+        args: Vec<FormattableExpression<Unit>>,
     },
     Operator {
         operator: String,
@@ -38,7 +38,7 @@ impl<U> FormattableExpression<U> {
         match self {
             Self::Function { name, args } => FormattableExpression::<O>::Function {
                 name,
-                args: Box::new(args.into_iter().map(|e| e.map_unit_impl(f)).collect()),
+                args: args.into_iter().map(|e| e.map_unit_impl(f)).collect(),
             },
             Self::Operator {
                 operator,
@@ -231,6 +231,7 @@ impl<F: LanguageFormatter, T: BasicFunction<F>> FormattableFunction<F> for T {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValueMode {
     /// All variables get converted to numbers, and units are added to all numbers  
