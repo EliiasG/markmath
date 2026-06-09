@@ -7,11 +7,11 @@ use crate::language::expression::EvaluationContext;
 use crate::language::format::FormattableLibraryProvider;
 use crate::language::latex_impl::LatexFormatter;
 use crate::unit_lib::{CLIUnitLib, UnitCollection};
-use std::path::Path;
-use std::{fs, io, thread};
 use std::io::ErrorKind;
+use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, SystemTime};
+use std::{fs, io, thread};
 
 const UNIT_PATH: &str = "units.txt";
 
@@ -39,12 +39,7 @@ pub fn run(compile_mode: CompileMode, input: &Path, output: &Path) -> io::Result
             UnitCollection::new()
         }
     };
-    let html = match output.extension().map(|s| s.to_str()).flatten() {
-        Some("html") => true,
-        Some("md") => false,
-        _ => return Err(io::Error::new(ErrorKind::Unsupported, "invalid output extension")),
-    };
-    let out = output.with_extension("md");
+    let md_output = output.with_extension("md");
     let mut unit_lib = CLIUnitLib::new(unit_collection, compile_mode == CompileMode::Resolving);
     let lib = FormattableLibraryProvider::new(LatexFormatter { precision: 5 });
     let mut prev_modified = None;
@@ -60,23 +55,32 @@ pub fn run(compile_mode: CompileMode, input: &Path, output: &Path) -> io::Result
         let mut eval_ctx = EvaluationContext::new();
         let input = fs::read_to_string(&input)?;
         let res = markdown::parse_markdown(&input, &mut eval_ctx, &mut unit_lib, &lib);
-        fs::write(&out, res)?;
-        match Command::new("pandoc").arg(&out).arg("-o").arg(&output).args(["--katex", "-s"]).status() {
+        fs::write(&md_output, res)?;
+        match Command::new("pandoc")
+            .arg(&md_output)
+            .arg("-o")
+            .arg(&output)
+            .args(["--katex", "-s"])
+            .status()
+        {
             Ok(s) => {
                 if !s.success() {
-                    panic!("pandoc fail with code {}", s.code().unwrap());
+                    println!("pandoc failed with code {}", s.code().unwrap());
+                    return Ok(());
                 }
             }
             Err(e) => {
-                panic!("pandoc executor exited with error: {}", e);
+                println!("pandoc executor exited with error: {}", e);
+                return Ok(());
             }
         }
         if compile_mode != CompileMode::Live {
             break;
         }
-
     }
-    
-    fs::write(UNIT_PATH, unit_lib.finish().to_string())?;
+
+    if compile_mode == CompileMode::Resolving {
+        fs::write(UNIT_PATH, unit_lib.finish().to_string())?;
+    }
     Ok(())
 }
