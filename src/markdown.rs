@@ -94,7 +94,8 @@ fn handle_code_block<F: LanguageFormatter, U: UnitLibrary>(
     let mut err = None;
     for (i, line) in lines.iter().enumerate() {
         if line.trim().is_empty() {
-            continue;
+            err = Some((i, "empty line".into()));
+            break;
         }
         let exp = match exp(line, lib) {
             Ok(r) => r,
