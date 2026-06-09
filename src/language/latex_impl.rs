@@ -34,7 +34,7 @@ impl LanguageFormatter for LatexFormatter {
         let num = num.trim_end_matches('0').trim_end_matches('.');
         let unit = unit
             .map(|u| format!("\\small\\text{{ {u}}}\\normalsize"))
-            .unwrap_or(String::new());
+            .unwrap_or_default();
         out.push_str(&format!("{num}{unit}"))
     }
 

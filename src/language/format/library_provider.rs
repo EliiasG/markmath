@@ -145,7 +145,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                         Unit::Defined(d)
                     })
                     .unwrap_or(Unit::None);
-                self.handle_unit(eval_ctx, unit_lib, value_mode, unit, &child)
+                self.handle_unit(eval_ctx, unit_lib, value_mode, unit, child)
             }
             Expression::LiteralUnit { name, child } => self.handle_unit(
                 eval_ctx,
@@ -181,15 +181,14 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
             },
             Expression::Negate(child) => {
                 // handle operator parenthesis eg. -(a+b)
-                if let Expression::Operator { operator, .. } = child.as_ref() {
-                    if self.operators[operator].should_parenthesize_left() {
+                if let Expression::Operator { operator, .. } = child.as_ref()
+                    && self.operators[operator].should_parenthesize_left() {
                         return FormattableExpression::Negate(Box::new(
                             self.generate_formattable_expression(
                                 eval_ctx, unit_lib, child, value_mode, true,
                             ),
                         ));
                     }
-                }
                 FormattableExpression::Negate(Box::new(
                     self.generate_formattable_expression(
                         eval_ctx, unit_lib, child, value_mode, false,
@@ -266,7 +265,7 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                 .generate_formattable_expression(eval_ctx, unit_lib, child, value_mode, false);
         };
         if let Unit::Defined(d) = &unit {
-            unit_lib.cache_defined_unit(&d);
+            unit_lib.cache_defined_unit(d);
         }
         FormattableExpression::Number { value, unit }
     }
@@ -296,12 +295,10 @@ impl<F: LanguageFormatter> FormattableLibraryProvider<F> {
                     out.push(c);
                     exp = false;
                 }
+            } else if c == '$' {
+                exp = true;
             } else {
-                if c == '$' {
-                    exp = true;
-                } else {
-                    out.push(c);
-                }
+                out.push(c);
             }
         }
         push(&mut num, out);
@@ -314,7 +311,7 @@ impl<F: LanguageFormatter> LibraryProvider for FormattableLibraryProvider<F> {
     fn function_exists(&self, name: &str, param_c: usize) -> bool {
         self.functions
             .get(name)
-            .map_or(false, |f| f.supports_arg_count(param_c))
+            .is_some_and(|f| f.supports_arg_count(param_c))
     }
 
     fn operator_exists(&self, symbol: &str) -> bool {

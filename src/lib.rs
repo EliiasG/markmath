@@ -7,10 +7,9 @@ use crate::language::expression::EvaluationContext;
 use crate::language::format::FormattableLibraryProvider;
 use crate::language::latex_impl::LatexFormatter;
 use crate::unit_lib::{CLIUnitLib, UnitCollection};
-use std::io::ErrorKind;
 use std::path::Path;
 use std::process::Command;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use std::{fs, io, thread};
 
 const UNIT_PATH: &str = "units.txt";
@@ -45,21 +44,21 @@ pub fn run(compile_mode: CompileMode, input: &Path, output: &Path) -> io::Result
     let mut prev_modified = None;
     loop {
         loop {
-            let new = fs::metadata(&input)?.modified()?;
-            if prev_modified == None || new > prev_modified.unwrap() {
+            let new = fs::metadata(input)?.modified()?;
+            if prev_modified.is_none() || new > prev_modified.unwrap() {
                 prev_modified = Some(new);
                 break;
             }
             thread::sleep(Duration::from_millis(500));
         }
         let mut eval_ctx = EvaluationContext::new();
-        let input = fs::read_to_string(&input)?;
+        let input = fs::read_to_string(input)?;
         let res = markdown::parse_markdown(&input, &mut eval_ctx, &mut unit_lib, &lib);
         fs::write(&md_output, res)?;
         match Command::new("pandoc")
             .arg(&md_output)
             .arg("-o")
-            .arg(&output)
+            .arg(output)
             .args(["--katex", "-s"])
             .status()
         {

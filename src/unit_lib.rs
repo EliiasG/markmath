@@ -1,7 +1,7 @@
 use crate::language::expression::DefinedUnit;
 use crate::language::format::UnitLibrary;
 use std::collections::{HashMap, HashSet};
-use std::fmt::{format, Display};
+use std::fmt::Display;
 use std::io::Write;
 use std::mem;
 use std::str::FromStr;
@@ -78,7 +78,7 @@ impl FromStr for UnitCollection {
         let mut defined_units = HashMap::new();
         let mut operator_results = HashMap::new();
         let mut lines = s.lines();
-        while let Some(line) = lines.next() {
+        for line in lines.by_ref() {
             let line = line.trim();
             if line.is_empty() {
                 break;
@@ -88,7 +88,7 @@ impl FromStr for UnitCollection {
             };
             defined_units.insert(k.to_string(), v.to_string());
         }
-        while let Some(line) = lines.next() {
+        for line in lines {
             let line = line.trim();
             if line.is_empty() {
                 break;

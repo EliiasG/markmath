@@ -48,10 +48,10 @@ impl Display for TokenTree {
                 r + ")"
             }
             TokenTree::DefinedUnit { name, child } => {
-                format!("{} {}", child.to_string(), name)
+                format!("{} {}", child, name)
             }
             TokenTree::LiteralUnit { name, child } => {
-                format!("{} \"{}\"", child.to_string(), name)
+                format!("{} \"{}\"", child, name)
             }
             TokenTree::FunctionCall { name, args } => {
                 let mut r = name.clone() + "(";
@@ -314,13 +314,11 @@ fn tokenize_source(expr: &str) -> Result<Vec<SourceToken>, TokenizationError> {
         } else if c == '(' || c == ')' {
             push_token(&mut current);
             current = Some(SourceToken::Parentheses(c == ')'));
+        } else if let Some(SourceToken::Operator(op)) = &mut current {
+            op.push(c);
         } else {
-            if let Some(SourceToken::Operator(op)) = &mut current {
-                op.push(c);
-            } else {
-                push_token(&mut current);
-                current = Some(SourceToken::Operator(c.to_string()));
-            }
+            push_token(&mut current);
+            current = Some(SourceToken::Operator(c.to_string()));
         }
     }
     if let Some(SourceToken::String(_)) = &current {

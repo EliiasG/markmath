@@ -143,7 +143,7 @@ impl Expression {
                     .map(|tt| Self::new(tt, provider))
                     .collect::<Result<_, _>>()?;
                 for op in operators.iter() {
-                    if !provider.operator_exists(&op) {
+                    if !provider.operator_exists(op) {
                         return Err(ExpressionError::InvalidOperator(op.clone()));
                     }
                 }
@@ -208,7 +208,7 @@ impl Expression {
                     Unit::Defined(l_d) => match r_u {
                         Unit::Defined(r_d) => Unit::Defined(DefinedUnit::Implicit {
                             operator: operator.clone(),
-                            associative: provider.operator_associative(&operator),
+                            associative: provider.operator_associative(operator),
                             left: Box::new(l_d),
                             right: Box::new(r_d),
                         }),
@@ -227,7 +227,7 @@ impl Expression {
                 let r = provider.eval_function(
                     function,
                     &args
-                        .into_iter()
+                        .iter()
                         .map(|arg| arg.eval(provider, context).map(|(v, _)| v))
                         .collect::<Result<Vec<_>, _>>()?,
                 )?;
