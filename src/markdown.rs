@@ -15,10 +15,7 @@ pub fn parse_markdown<F: LanguageFormatter>(
     let mut text_blocks = Vec::new();
     let mut code_blocks = Vec::new();
     let mut cb = lib.make_calculations(eval_ctx, unit_lib);
-    loop {
-        let Some(block) = blocks.next() else {
-            break;
-        };
+    while let Some(block) = blocks.next() {
         text_blocks.push(block);
         let Some(block) = blocks.next() else {
             break;

@@ -1,7 +1,6 @@
-use std::env;
-use std::path::{Path, PathBuf};
 use clap::Parser;
 use markmath::{configure, run, CompileMode};
+use std::path::{Path, PathBuf};
 
 
 #[derive(Parser)]
