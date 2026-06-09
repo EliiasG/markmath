@@ -54,7 +54,7 @@ When an operator is used, the following rules are used to determine the resultin
 | `acos(deg)`     | acos function returning degrees                  |
 | `atan(val)`     | atan function returning degrees                  |
 | `mod(a, b)`     | `a` mod `b`                                      |
-| `p(a, b)`       | `a` rounded to `b` decimals                      |
+| `p(a, b)`       | `a` rounded to neartest `b`                      |
 | `disp(a, b)`    | returns `a` but renders as `b`                   |
 
 ### Operators
@@ -67,7 +67,7 @@ Operator precedence is as you would expect.
 | `*`      | multiply                  |
 | `/`      | divide with division line |
 | `//`     | divide with symbol        |
-| `^`      | power                     |
+| `**`     | power                     |
 
 ### Flags
 When creating a math block in the source file, flags can be added before the first space to change how the expression is rendered:
