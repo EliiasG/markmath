@@ -1,6 +1,7 @@
 use std::cmp::PartialEq;
 use std::fmt::{Debug, Display, Formatter};
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum TokenTree {
     VariableAssign {
         name: String,
@@ -72,6 +73,7 @@ impl Display for TokenTree {
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub struct TokenizationError(String);
 
 impl Debug for TokenizationError {
@@ -81,6 +83,9 @@ impl Debug for TokenizationError {
 }
 
 pub fn tokenize(source: &str) -> Result<TokenTree, TokenizationError> {
+    if source.trim().is_empty() {
+        return Err(TokenizationError("Empty expression".into()));
+    }
     let source_tokens = tokenize_source(source)?;
     let (tree, i) = gen_tree(&source_tokens, 0)?;
     if i == source_tokens.len() - 1 {
@@ -219,19 +224,17 @@ fn handle_expr(expr: &[SourceToken], i: &mut usize) -> Result<TokenTree, Tokeniz
                 let mut args = Vec::new();
                 *i += 2;
                 loop {
+                    if expr.get(*i) == Some(&SourceToken::Parentheses(true)) {
+                        break;
+                    }
                     let (arg, ii) = gen_tree(expr, *i)?;
                     args.push(arg);
                     *i = ii + 1;
-                    if expr.get(*i) != Some(&SourceToken::Operator(','.to_string())) {
-                        break;
+                    if expr.get(*i) == Some(&SourceToken::Operator(','.to_string())) {
+                        *i += 1;
+                    } else if expr.get(*i) != Some(&SourceToken::Parentheses(true)) {
+                        return Err(TokenizationError(format!("Expected ) or , in function '{name}' after argument")));
                     }
-                    *i += 1;
-                }
-                if expr.get(*i) != Some(&SourceToken::Parentheses(true)) {
-                    return Err(TokenizationError(format!(
-                        "Expected ) after function call '{}'",
-                        name
-                    )));
                 }
                 Ok(TokenTree::FunctionCall {
                     name: name.clone(),

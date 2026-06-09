@@ -96,7 +96,7 @@ impl Debug for ExpressionError {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     VariableAssign {
         name: String,

@@ -4,6 +4,8 @@ use crate::language::expression::{
 };
 use std::collections::HashMap;
 
+/// Implementation of [LibraryProvider] based on a [LanguageFormatter].  
+/// This way the only thing needed to implement an output language is [LanguageFormatter].  
 pub struct FormattableLibraryProvider<F: LanguageFormatter> {
     functions: HashMap<String, Box<dyn FormattableFunction<F>>>,
     operators: HashMap<String, Box<dyn FormattableOperator<F>>>,

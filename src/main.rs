@@ -4,7 +4,7 @@ use markmath::{run, CompileMode};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    assert!(args.len() >= 2);
+    assert!(args.len() >= 3);
     //run(CompileMode::Live, Path::new(&args[0]), Path::new(&args[1])).unwrap();
     let compile_mode = if args.contains(&"--live".to_string()) {
         CompileMode::Live
