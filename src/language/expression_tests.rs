@@ -1,5 +1,6 @@
-use crate::language::expression::{Expression, LibraryProvider};
-use crate::language::parse::TokenTree;
+use crate::language::expression::{EvaluationContext, Expression, LibraryProvider};
+use crate::language::parse::{TokenTree, tokenize};
+use std::f32::consts::E;
 
 /// Real one would be [FormattableLibraryProvider](crate::language::format::FormattableLibraryProvider)
 
@@ -179,26 +180,157 @@ fn simple_operator() {
     // operator does not exist in lib provider
     assert!(Expression::new(invalid_op, &MockLibraryProvider).is_err());
 
-    assert_expr(TokenTree::OperatorSequence {
-        operators: vec!["+".into()],
-        children: vec![
-            TokenTree::NumberLiteral("1".into()),
-            TokenTree::NumberLiteral("2".into()),
-        ],
-    }, Expression::Operator {
+    assert_expr(
+        TokenTree::OperatorSequence {
+            operators: vec!["+".into()],
+            children: vec![
+                TokenTree::NumberLiteral("1".into()),
+                TokenTree::NumberLiteral("2".into()),
+            ],
+        },
+        Expression::Operator {
+            operator: "+".into(),
+            left: Box::new(Expression::NumberLiteral(1.)),
+            right: Box::new(Expression::NumberLiteral(2.)),
+        },
+    );
+    assert_expr(
+        TokenTree::OperatorSequence {
+            operators: vec!["*".into()],
+            children: vec![
+                TokenTree::NumberLiteral("1".into()),
+                TokenTree::VariableRef("my_var".into()),
+            ],
+        },
+        Expression::Operator {
+            operator: "*".into(),
+            left: Box::new(Expression::NumberLiteral(1.)),
+            right: Box::new(Expression::VariableRef("my_var".into())),
+        },
+    );
+}
+
+#[test]
+fn operator_sequence() {
+    assert_expr(
+        TokenTree::OperatorSequence {
+            operators: vec!["+".into(), "+".into()],
+            children: vec![
+                TokenTree::NumberLiteral("7".into()),
+                TokenTree::NumberLiteral("1".into()),
+                TokenTree::NumberLiteral("3".into()),
+            ],
+        },
+        Expression::Operator {
+            operator: "+".into(),
+            left: Box::new(Expression::Operator {
+                operator: "+".into(),
+                left: Box::new(Expression::NumberLiteral(7.)),
+                right: Box::new(Expression::NumberLiteral(1.)),
+            }),
+            right: Box::new(Expression::NumberLiteral(3.)),
+        },
+    );
+
+    assert_expr(
+        TokenTree::OperatorSequence {
+            operators: vec!["+".into(), "*".into()],
+            children: vec![
+                TokenTree::NumberLiteral("7".into()),
+                TokenTree::NumberLiteral("1".into()),
+                TokenTree::NumberLiteral("3".into()),
+            ],
+        },
+        Expression::Operator {
+            operator: "+".into(),
+            left: Box::new(Expression::NumberLiteral(7.)),
+            right: Box::new(Expression::Operator {
+                operator: "*".into(),
+                left: Box::new(Expression::NumberLiteral(1.)),
+                right: Box::new(Expression::NumberLiteral(3.)),
+            }),
+        },
+    );
+
+    assert_expr(
+        TokenTree::OperatorSequence {
+            operators: vec![
+                "*".into(),
+                "+".into(),
+                "/".into(),
+                "*".into(),
+                "^".into(),
+                "+".into(),
+            ],
+            children: vec![
+                TokenTree::NumberLiteral("7".into()),
+                TokenTree::NumberLiteral("1".into()),
+                TokenTree::NumberLiteral("3".into()),
+                TokenTree::NumberLiteral("2".into()),
+                TokenTree::NumberLiteral("5".into()),
+                TokenTree::NumberLiteral("9".into()),
+                TokenTree::NumberLiteral("42".into()),
+            ],
+        },
+        Expression::Operator {
+            operator: "+".into(),
+            left: Box::new(Expression::Operator {
+                operator: "+".into(),
+                left: Box::new(Expression::Operator {
+                    operator: "*".into(),
+                    left: Box::new(Expression::NumberLiteral(7.)),
+                    right: Box::new(Expression::NumberLiteral(1.)),
+                }),
+                right: Box::new(Expression::Operator {
+                    operator: "*".into(),
+                    left: Box::new(Expression::Operator {
+                        operator: "/".into(),
+                        left: Box::new(Expression::NumberLiteral(3.)),
+                        right: Box::new(Expression::NumberLiteral(2.)),
+                    }),
+                    right: Box::new(Expression::Operator {
+                        operator: "^".into(),
+                        left: Box::new(Expression::NumberLiteral(5.)),
+                        right: Box::new(Expression::NumberLiteral(9.)),
+                    }),
+                }),
+            }),
+            right: Box::new(Expression::NumberLiteral(42.)),
+        },
+    )
+}
+
+#[test]
+fn eval() {
+    let mut ctxt = EvaluationContext::new();
+    let expr = Expression::Operator {
         operator: "+".into(),
-        left: Box::new(Expression::NumberLiteral(1.)),
-        right: Box::new(Expression::NumberLiteral(2.)),
-    });
-    assert_expr(TokenTree::OperatorSequence {
-        operators: vec!["*".into()],
-        children: vec![
-            TokenTree::NumberLiteral("1".into()),
-            TokenTree::VariableRef("my_var".into()),
-        ],
-    }, Expression::Operator {
-        operator: "*".into(),
-        left: Box::new(Expression::NumberLiteral(1.)),
-        right: Box::new(Expression::VariableRef("my_var".into())),
-    });
+        left: Box::new(Expression::FunctionCall {
+            function: "sum".into(),
+            args: vec![
+                Expression::NumberLiteral(3.25),
+                Expression::Negate(Box::new(Expression::Operator {
+                    operator: "*".into(),
+                    left: Box::new(Expression::NumberLiteral(7.)),
+                    right: Box::new(Expression::NumberLiteral(3.)),
+                })),
+                Expression::Operator {
+                    operator: "+".into(),
+                    left: Box::new(Expression::Operator {
+                        operator: "*".into(),
+                        left: Box::new(Expression::Operator {
+                            operator: "^".into(),
+                            left: Box::new(Expression::NumberLiteral(2.)),
+                            right: Box::new(Expression::NumberLiteral(3.)),
+                        }),
+                        right: Box::new(Expression::NumberLiteral(2.)),
+                    }),
+                    right: Box::new(Expression::NumberLiteral(1.75)),
+                },
+            ],
+        }),
+        right: Box::new(Expression::NumberLiteral(42.)),
+    };
+    // unwrap is part of test as it should not be err
+    assert_eq!(expr.eval(&MockLibraryProvider, &mut ctxt).unwrap().0, 42.)
 }
